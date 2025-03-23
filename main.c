@@ -1,12 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+typedef enum { false, true } bool;
+
 char *Create_Process(char *command) {
   // Run shell command and return its output as a string pointer
   FILE *fp;
   char ch;
+  // Remember to free buffer pointer
   char *buffer = malloc(128 * sizeof(char));
-  int temp, i = 0;
+  int i = 0;
 
   fp = popen(command, "r");
 
@@ -17,10 +20,12 @@ char *Create_Process(char *command) {
 
   else {
     while ((ch = fgetc(fp)) != EOF) {
-      if (i < 256) {
-        buffer[i] = ch;
-        i++;
+      // Handle buffer length more than 256chars
+      if (i > 128) {
+        buffer = realloc(buffer, sizeof(256 * sizeof(char)));
       }
+      buffer[i] = ch;
+      i++;
     }
     buffer[i] = '\0';
   }
@@ -29,12 +34,20 @@ char *Create_Process(char *command) {
   return buffer;
 }
 
+bool CheckNM() {
+  // Call out nmcli -h to determine if machine has NetworkManager
+  char *command = "nmcli -h";
+  char *output = Create_Process(command);
+  printf("output: %s", output);
+  free(output);
+  // Check output
+
+  return true;
+}
+
 int main() {
 
-  char *command = "ls";
-  char *output = Create_Process(command);
-  printf("Output: %s", output);
-  free(output);
+  CheckNM();
 
   return 0;
 }
