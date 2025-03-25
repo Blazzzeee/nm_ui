@@ -1,7 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-
 typedef enum { false, true } bool;
 #define INITIAL_SIZE 128
 #define MAX_SIZE 512
@@ -56,22 +54,37 @@ char *Create_Process(char *command) {
 
   return buffer;
 }
+bool Validate_OP(char *output, char *expected) {
+  // Output is the output buffer returned by running subprocess
+  // Expected is the Expected output of that command
+  // The function returns whether the 'output' is similar to 'expected' or not
+
+  // Possible approaches
+  // char by char comparison (error if output is off by even one index)
+  // Regex requires importing POSIX regex library
+  // Calling shell to perform grep or regex etc
+  return true;
+}
 
 bool CheckNM() {
   // Call out nmcli -h to determine if machine has NetworkManager
+  bool result = true;
   char *command = "nmcli -h 2>&1";
+  char *expected = "Usage: nmcli [OPTIONS] OBJECT { COMMAND | help }";
   // nmcli sends o/p to stderr , redirect o/p to stdout
   char *output = Create_Process(command);
-  printf("Output: %s \n", output);
+
+  printf("Ouput: %s", output);
+
   free(output);
   // Check output
 
-  return true;
+  return result;
 }
 
 int main() {
 
-  CheckNM();
+  bool NM_present = CheckNM();
 
   return 0;
 }
