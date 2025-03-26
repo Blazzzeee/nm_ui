@@ -1,12 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef enum { false, true } bool;
 
-#define INITIAL_SIZE 128
-#define MAX_SIZE 512
-#define COMPARE_LENGTH 20
-
+#define INITIAL_SIZE 64
+#define MAX_SIZE 4096
+#define ADAPTER_STRING "GENERAL.DEVICE"
+#define CHECKNM_STRING "nmcli tool"
 char *Create_Process(char *command) {
   // Run shell command and return its output as a string pointer
   FILE *fp;
@@ -45,7 +46,7 @@ char *Create_Process(char *command) {
         } else {
           // Loop termination to avoid stackoverflow
           printf("DEBUG: MAX Buffer limit reached , current size: %d , "
-                 "max_size: %d\n",
+                 "max_size: %d \n",
                  size, MAX_SIZE);
           break;
         }
@@ -62,25 +63,11 @@ bool Validate_OP(char *output, char *expected) {
   // Expected is the Expected output of that command
   // The function returns whether the 'output' is similar to 'expected' or not
 
-  // current approach char by char comparison , possible improvements shell
-  // regex
-  int i, matched = 0;
-  while (output[i] != '\0' || expected[i] != '\0') {
-    // printf("Comaprison output[i]: %c, expected[i]: %c \n", output[i],
-    // expected[i]);
-    if (output[i] == expected[i]) {
-      matched++;
-    }
-    if (matched >= COMPARE_LENGTH) {
-      break;
-    }
-    i++;
-  }
-  if (matched >= COMPARE_LENGTH) {
+  // current approach string handling function
+  char *match = strstr(output, expected);
+  if (match != NULL) {
     return true;
-  }
-
-  else {
+  } else {
     return false;
   }
 }
@@ -89,11 +76,10 @@ bool CheckNM() {
   // Call out nmcli -h to determine if machine has NetworkManager
   bool result;
   char *command = "nmcli -v 2>&1";
-  char *expected = "nmcli tool, version 1.52.0-1";
   // nmcli sends o/p to stderr , redirect o/p to stdout
   char *output = Create_Process(command);
 
-  result = Validate_OP(output, expected);
+  result = Validate_OP(output, CHECKNM_STRING);
   // printf("Ouput: %s", output);
   free(output);
   // Check output
@@ -101,21 +87,32 @@ bool CheckNM() {
   return result;
 }
 
-void InitialiseAdapter() {
+bool CheckWifiAdapter() {
   // Check wifi adapter availability on device
   // command - nmcli device show
-
+  char *output = Create_Process("nmcli device show 2>&1 | grep -B 1 -E '^.*: "
+                                "+wifi$' | grep -v 'GENERAL.TYPE'");
+  bool result = Validate_OP(output, ADAPTER_STRING);
   // prompt the user about choosing adapter if there are more than one available
   // Initialise the adapter that will be used for rest of execution
+  free(output);
+  return result;
 }
 
 int main() {
 
   bool NM_present = CheckNM();
   if (NM_present == true) {
-    printf("NM present");
+    printf("NM present \n");
   } else {
-    printf("NM not accessible");
+    printf("NM not accessible \n");
+  }
+
+  bool AdapterPresent = CheckWifiAdapter();
+  if (AdapterPresent == true) {
+    printf("Adapter found \n");
+  } else {
+    printf("Adapter could not be found \n");
   }
   return 0;
 }
