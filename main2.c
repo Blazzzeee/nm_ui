@@ -13,10 +13,36 @@ typedef enum { false, true } bool;
 
 struct ConnList {
   char **ssidList;
-  char **StrengthList;
+  int *strengthList;
   int count;
   int capacity;
 };
+
+struct ConnList *InitConnList() {
+
+  struct ConnList *ConnList;
+
+  ConnList->count = 0;
+  ConnList->capacity = 20;
+  ConnList->ssidList = (char **)malloc(sizeof(char *) * ConnList->capacity);
+  ConnList->strengthList = (int *)malloc(sizeof(int) * ConnList->capacity);
+
+  if (ConnList->ssidList == NULL || ConnList->strengthList == NULL) {
+    printf("Memory allocation failed \n");
+    return NULL;
+  } else {
+    return ConnList;
+  }
+}
+
+int AddConnList(struct ConnList *ConnList, char *ssid, int strength) {
+
+  ConnList->ssidList[ConnList->count] = ssid;
+  ConnList->strengthList[ConnList->count] = strength;
+  ConnList->count++;
+
+  return 0;
+}
 
 char *Create_Process(char *command) {
   // Run shell command and return its output as a string pointer
@@ -99,7 +125,7 @@ NMClient *CreateClient() {
   }
 }
 
-void GetNetworks(NMClient *client) {
+void GetNetworks(NMClient *client, struct ConnList *ConnList) {
   // Get currently active connection
   const GPtrArray *devices = nm_client_get_devices(client);
 
@@ -117,11 +143,11 @@ void GetNetworks(NMClient *client) {
         guint strength = nm_access_point_get_strength(AP);
         if (ssid_bytes) {
           gsize len;
-          const char *ssid = g_bytes_get_data(ssid_bytes, &len);
+          const char *raw_ssid = g_bytes_get_data(ssid_bytes, &len);
 
-          // Print SSID properly (length-limited to avoid non-null-terminated
-          // issues)
-          printf("SSID: %.*s\n Signal: %d", (int)len, ssid, (int *)strength);
+          char *ssid = g_strndup(raw_ssid, len);
+          AddConnList(ConnList, ssid, strength);
+
         } else {
           printf("SSID not available\n");
         }
@@ -138,9 +164,17 @@ int main() {
   NMClient *client;
   client = CreateClient();
 
+  struct ConnList *ConnList;
+  ConnList = InitConnList();
+
   if (client != NULL) {
     // Rescan test
-    GetNetworks(client);
+    GetNetworks(client, ConnList);
+  }
+
+  for (int i = 0; i < ConnList->count; i++) {
+    printf("SSID: %s Strength: %d\n", ConnList->ssidList[i],
+           ConnList->strengthList[i]);
   }
 
   return 0;
