@@ -1,0 +1,120 @@
+#include <libnm/nm-dbus-interface.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <glib.h>
+#include <libnm/NetworkManager.h>
+
+typedef enum { false, true } bool;
+
+#define INITIAL_SIZE 64
+#define MAX_SIZE 4096
+
+char *Create_Process(char *command) {
+  // Run shell command and return its output as a string pointer
+  FILE *fp;
+  char ch;
+  int size = INITIAL_SIZE;
+  // Remember to free buffer pointer
+  char *buffer = malloc(INITIAL_SIZE);
+  int i = 0;
+
+  fp = popen(command, "r");
+
+  if (fp == NULL) {
+    // Replace with exception handling
+    printf("DEBUG: Operation failed \n");
+  }
+
+  else {
+    while ((ch = fgetc(fp)) != EOF) {
+      if (i < size - 1) {
+        buffer[i++] = ch;
+      }
+
+      else {
+        size = size * 2;
+        if (size <= MAX_SIZE) {
+          char *temp = realloc(buffer, size);
+          if (temp != NULL) {
+            // safely exteneded size
+            buffer = temp;
+            buffer[i++] = ch;
+          } else {
+            // Handle realloc error
+            printf("DEBUG: Error extending size\n");
+            return buffer;
+          }
+        } else {
+          // Loop termination to avoid stackoverflow
+          printf("DEBUG: MAX Buffer limit reached , current size: %d , "
+                 "max_size: %d \n",
+                 size, MAX_SIZE);
+          break;
+        }
+      }
+    }
+    buffer[i] = '\0';
+  }
+  pclose(fp);
+
+  return buffer;
+}
+
+bool Validate_OP(char *output, char *expected) {
+  // Output is the output buffer returned by running subprocess
+  // Expected is the Expected output of that command
+  // The function returns whether the 'output' is similar to 'expected' or not
+
+  // current approach string handling function
+  char *match = strstr(output, expected);
+  if (match != NULL) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+NMClient *CreateClient() {
+  NMClient *client;
+  client = nm_client_new(NULL, NULL);
+
+  if (client != NULL) {
+    const char *versionInfo = nm_client_get_version(client);
+    printf("%s \n", versionInfo);
+    return client;
+  }
+
+  else {
+    printf("NetworkManager not running\n");
+    return NULL;
+  }
+}
+
+void Getactive(NMClient *client) {
+  // Get currently active connection
+  const GPtrArray *devices = nm_client_get_devices(client);
+
+  for (guint i = 0; i < devices->len; i++) {
+    const NMDevice *device = (NMDevice *)g_ptr_array_index(devices, i);
+    NMDeviceType deviceType = nm_device_get_device_type(device);
+
+    switch (deviceType) {
+    case NM_DEVICE_TYPE_WIFI:
+      printf("Found wifi device");
+    }
+  }
+}
+
+int main() {
+
+  NMClient *client;
+  client = CreateClient();
+
+  if (client != NULL) {
+    Getactive(client);
+  }
+
+  return 0;
+}
