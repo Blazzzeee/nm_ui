@@ -11,6 +11,13 @@ typedef enum { false, true } bool;
 #define INITIAL_SIZE 64
 #define MAX_SIZE 4096
 
+struct ConnList {
+  char **ssidList;
+  char **StrengthList;
+  int count;
+  int capacity;
+};
+
 char *Create_Process(char *command) {
   // Run shell command and return its output as a string pointer
   FILE *fp;
@@ -92,7 +99,7 @@ NMClient *CreateClient() {
   }
 }
 
-void Getactive(NMClient *client) {
+void GetNetworks(NMClient *client) {
   // Get currently active connection
   const GPtrArray *devices = nm_client_get_devices(client);
 
@@ -101,8 +108,27 @@ void Getactive(NMClient *client) {
     NMDeviceType deviceType = nm_device_get_device_type(device);
 
     switch (deviceType) {
-    case NM_DEVICE_TYPE_WIFI:
-      printf("Found wifi device");
+    case NM_DEVICE_TYPE_WIFI: {
+      const GPtrArray *APList =
+          nm_device_wifi_get_access_points((NMDeviceWifi *)device);
+      for (guint i = 0; i < APList->len; i++) {
+        NMAccessPoint *AP = (NMAccessPoint *)g_ptr_array_index(APList, i);
+        GBytes *ssid_bytes = nm_access_point_get_ssid(AP);
+        guint strength = nm_access_point_get_strength(AP);
+        if (ssid_bytes) {
+          gsize len;
+          const char *ssid = g_bytes_get_data(ssid_bytes, &len);
+
+          // Print SSID properly (length-limited to avoid non-null-terminated
+          // issues)
+          printf("SSID: %.*s\n Signal: %d", (int)len, ssid, (int *)strength);
+        } else {
+          printf("SSID not available\n");
+        }
+      }
+    }
+    default:
+      true;
     }
   }
 }
@@ -113,7 +139,8 @@ int main() {
   client = CreateClient();
 
   if (client != NULL) {
-    Getactive(client);
+    // Rescan test
+    GetNetworks(client);
   }
 
   return 0;

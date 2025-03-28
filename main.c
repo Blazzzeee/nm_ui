@@ -8,6 +8,14 @@ typedef enum { false, true } bool;
 #define MAX_SIZE 4096
 #define ADAPTER_STRING "GENERAL.DEVICE"
 #define CHECKNM_STRING "nmcli tool"
+#define INITIAL_COUNT 10
+
+struct RenderList {
+  char **items;
+  int count;
+  int capacity;
+};
+
 char *Create_Process(char *command) {
   // Run shell command and return its output as a string pointer
   FILE *fp;
@@ -93,10 +101,43 @@ bool CheckWifiAdapter() {
   char *output = Create_Process("nmcli device show 2>&1 | grep -B 1 -E '^.*: "
                                 "+wifi$' | grep -v 'GENERAL.TYPE'");
   bool result = Validate_OP(output, ADAPTER_STRING);
-  // prompt the user about choosing adapter if there are more than one available
-  // Initialise the adapter that will be used for rest of execution
   free(output);
   return result;
+}
+
+void PopulateNMOptions() {
+  // Disable/Enable Wifi
+  // Delete a Connection
+  // Rescan Wifi
+  // Show Password
+  // Saved Connections
+}
+
+char *GetNetworks(char *mode) {}
+
+void PopulateNetworks(char *mode) {
+  if (strcmp(mode, "available")) {
+    char *buffer = GetNetworks();
+  }
+  // Add available networks
+  // Add scanned networks
+}
+
+struct RenderList *InitRenderList() {
+  // Initialise RenderList
+  struct RenderList *renderList;
+  renderList->count = 0;
+  renderList->capacity = INITIAL_COUNT;
+  renderList->items = malloc(sizeof(char *) * renderList->capacity);
+
+  if (renderList->items == NULL) {
+    printf("Memory allocation failed to renderList \n");
+    return NULL;
+  }
+
+  else {
+    return renderList;
+  }
 }
 
 int main() {
