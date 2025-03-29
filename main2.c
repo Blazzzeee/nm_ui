@@ -14,22 +14,26 @@ typedef enum { false, true } bool;
 #define CONNLIST_SIZE 20;
 #define NMLIST_SIZE 20;
 
-struct ConnList {
+struct connlist {
   char **ssidList;
   int *strengthList;
   int count;
   int capacity;
 };
 
-struct NMList {
+struct nmlist {
   char **List;
   int count;
   int capacity;
 };
 
-struct ConnList *InitConnList() {
+typedef struct connlist ConnList;
 
-  struct ConnList *ConnList;
+typedef struct nmlist NMList;
+
+ConnList *InitConnList() {
+
+  ConnList *ConnList;
 
   ConnList->count = 0;
   ConnList->capacity = CONNLIST_SIZE;
@@ -44,39 +48,51 @@ struct ConnList *InitConnList() {
   }
 }
 
-int AddConnList(struct ConnList *ConnList, char *ssid, int strength) {
+int AddConnList(ConnList *ConnList, char *ssid, int strength) {
 
-  ConnList->ssidList[ConnList->count] = ssid;
-  ConnList->strengthList[ConnList->count] = strength;
-  ConnList->count++;
+  if (ConnList->count <= ConnList->capacity) {
+    ConnList->ssidList[ConnList->count] = ssid;
+    ConnList->strengthList[ConnList->count] = strength;
+    ConnList->count++;
+    return 0;
+  }
 
-  return 0;
+  else {
+    printf("Overflow Connlist\n");
+    return 1;
+  }
 }
 
-struct NMList *InitNMList() {
-  struct NMList *NMList = (struct NMList *)malloc(sizeof(struct NMList));
-  if (NMList == NULL) {
+NMList *InitNMList() {
+  NMList *NMlist = (NMList *)malloc(sizeof(NMList));
+  if (NMlist == NULL) {
     printf("Memory allocation failed for NMList structure\n");
     return NULL;
   }
 
-  NMList->count = 0;
-  NMList->capacity = NMLIST_SIZE;
-  NMList->List = (char **)malloc(sizeof(char *) * NMList->capacity);
+  NMlist->count = 0;
+  NMlist->capacity = NMLIST_SIZE;
+  NMlist->List = (char **)malloc(sizeof(char *) * NMlist->capacity);
 
-  if (NMList->List == NULL) {
+  if (NMlist->List == NULL) {
     printf("Memory allocation failed for List array\n");
-    free(NMList);
+    free(NMlist);
     return NULL;
   }
 
-  return NMList;
+  return NMlist;
 }
 
-int AddNMList(struct NMList *NMList, char *option) {
-  NMList->List[NMList->count] = option;
-  NMList->count++;
-  return 0;
+int AddNMList(NMList *NMList, char *option) {
+  if (NMList->count <= NMList->capacity) {
+
+    NMList->List[NMList->count] = option;
+    NMList->count++;
+    return 0;
+  } else {
+    printf("NMList Overflow");
+    return 1;
+  }
 }
 
 char *Create_Process(char *command) {
@@ -146,9 +162,11 @@ bool Validate_OP(char *output, char *expected) {
 
 NMClient *CreateClient() {
   NMClient *client;
+  // request a synchronous call to NetworkManager over ipc socket
   client = nm_client_new(NULL, NULL);
 
   if (client != NULL) {
+    // version info check
     const char *versionInfo = nm_client_get_version(client);
     printf("%s \n", versionInfo);
     return client;
@@ -160,42 +178,68 @@ NMClient *CreateClient() {
   }
 }
 
-void GetNetworks(NMClient *client, struct ConnList *ConnList) {
-  // Get currently active connection
-  const GPtrArray *devices = nm_client_get_devices(client);
-
-  for (guint i = 0; i < devices->len; i++) {
-    const NMDevice *device = (NMDevice *)g_ptr_array_index(devices, i);
-    NMDeviceType deviceType = nm_device_get_device_type(device);
-
-    switch (deviceType) {
-    case NM_DEVICE_TYPE_WIFI: {
-      const GPtrArray *APList =
-          nm_device_wifi_get_access_points((NMDeviceWifi *)device);
-      for (guint i = 0; i < APList->len; i++) {
-        NMAccessPoint *AP = (NMAccessPoint *)g_ptr_array_index(APList, i);
+void ProcessWifiAP(NMDeviceWifi *device, ConnList *ConnList) {
+  // Request Access Point(networks : connected + available) from the current
+  // device
+  const GPtrArray *APList = nm_device_wifi_get_access_points(device);
+  if (APList != NULL) {
+    for (guint i = 0; i < APList->len; i++) {
+      // Iterate over the Access Point List
+      NMAccessPoint *AP = (NMAccessPoint *)g_ptr_array_index(APList, i);
+      if (AP != NULL) {
         GBytes *ssid_bytes = nm_access_point_get_ssid(AP);
+        // ssid is stored as raw_bytes
         guint strength = nm_access_point_get_strength(AP);
+        // request signal strength
         if (ssid_bytes) {
+          // if the bytes are valid
           gsize len;
+          // change bytes to data
           const char *raw_ssid = g_bytes_get_data(ssid_bytes, &len);
-
+          // Safe copy the ssid into ssid;
           char *ssid = g_strndup(raw_ssid, len);
+          // Add the ssid and signal strength to Connection List
           AddConnList(ConnList, ssid, strength);
-
-        } else {
-          printf("SSID not available\n");
         }
+
+      } else {
+        printf("SSID not available\n");
       }
     }
-    default:
-      true;
-    }
+
+  } else {
+    printf("cannot request Access Points from device");
   }
 }
 
-int EnableDisableWifi(NMClient *client, struct NMList *NMList) {
+int GetNetworks(NMClient *client, ConnList *ConnList) {
+  // Populate the Connection List with avalilable networks
 
+  // Request all the available devices managed by the client
+  const GPtrArray *devices = nm_client_get_devices(client);
+
+  if (devices == NULL) {
+    printf("Erorr requesting devices from client \n");
+    return 1;
+  } else {
+    for (guint i = 0; i < devices->len; i++) {
+      // Iterate over GPtrArray , request APs for wifi device
+      const NMDevice *device = (NMDevice *)g_ptr_array_index(devices, i);
+      if (device != NULL) {
+        NMDeviceType deviceType = nm_device_get_device_type(device);
+
+        if (deviceType == NM_DEVICE_TYPE_WIFI) {
+          // ProcessWifiAP adds networks to Connection List
+          ProcessWifiAP((NMDeviceWifi *)device, ConnList);
+        }
+      }
+    }
+    return 0;
+  }
+}
+
+int EnableDisableWifi(NMClient *client, NMList *NMList) {
+  // Requests state of Wifi and adds appropriately to Network List
   bool WifiState = (bool)nm_client_wireless_get_enabled(client);
   if (WifiState == true) {
     char *option = "Disable Wifi";
@@ -210,7 +254,8 @@ int EnableDisableWifi(NMClient *client, struct NMList *NMList) {
   }
 }
 
-void PopulateNMRelatedOptions(NMClient *client, struct NMList *NMList) {
+bool PopulateNMRelatedOptions(NMClient *client, NMList *NMList) {
+  // Adds all Netwok related options in Network List
   // Enable/Disable Wifi
   EnableDisableWifi(client, NMList);
   // Delete a Connection
@@ -221,6 +266,8 @@ void PopulateNMRelatedOptions(NMClient *client, struct NMList *NMList) {
   AddNMList(NMList, "Show Password");
   // Saved Connections
   AddNMList(NMList, "Saved Connections");
+
+  return true;
 }
 
 int main() {
@@ -228,17 +275,17 @@ int main() {
   NMClient *client;
   client = CreateClient();
 
-  struct ConnList *ConnList;
+  ConnList *ConnList;
   ConnList = InitConnList();
 
-  struct NMList *NMList;
+  NMList *NMList;
   NMList = InitNMList();
 
   if (client != NULL) {
     // Rescan test
     GetNetworks(client, ConnList);
 
-    PopulateNMRelatedOptions(client, NMList);
+    bool PopulatedList = PopulateNMRelatedOptions(client, NMList);
   }
 
   for (int i = 0; i < ConnList->count; i++) {
