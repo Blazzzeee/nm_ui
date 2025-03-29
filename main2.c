@@ -13,23 +13,30 @@ typedef enum { false, true } bool;
 
 #define CONNLIST_SIZE 20;
 #define NMLIST_SIZE 20;
+#define RENDERLIST_SIZE 40;
 
-struct connlist {
+struct _Connlist {
   char **ssidList;
   int *strengthList;
   int count;
   int capacity;
 };
 
-struct nmlist {
+struct _Nmlist {
   char **List;
   int count;
   int capacity;
 };
 
-typedef struct connlist ConnList;
+struct _RenderList {
+  char **List;
+  int count;
+  int capacity;
+};
 
-typedef struct nmlist NMList;
+typedef struct _Connlist ConnList;
+typedef struct _Nmlist NMList;
+typedef struct _RenderList RenderList;
 
 ConnList *InitConnList() {
 
@@ -93,6 +100,68 @@ int AddNMList(NMList *NMList, char *option) {
     printf("NMList Overflow");
     return 1;
   }
+}
+
+RenderList *InitRenderList() {
+  RenderList *Renderlist = (RenderList *)malloc(sizeof(RenderList));
+  if (Renderlist == NULL) {
+    printf("Memory allocation failed for RenderList structure\n");
+    return NULL;
+  }
+
+  Renderlist->count = 0;
+  Renderlist->capacity = RENDERLIST_SIZE;
+  Renderlist->List = (char **)malloc(sizeof(char *) * Renderlist->capacity);
+
+  if (Renderlist->List == NULL) {
+    printf("Memory allocation failed for List array\n");
+    free(Renderlist);
+    return NULL;
+  }
+
+  return Renderlist;
+}
+
+int PopulateRenderList(RenderList *RenderList, ConnList *ConnList,
+                       NMList *NMList) {
+  char *entry;
+  for (int i = 0; i < ConnList->count; i++) {
+    char StrengthBuffer[5];
+
+    snprintf(StrengthBuffer, sizeof(StrengthBuffer), " %d",
+             ConnList->strengthList[i]);
+
+    size_t ssid_len = strlen(ConnList->ssidList[i]);
+    size_t strength_len = strlen(StrengthBuffer);
+    size_t total_len = ssid_len + strength_len + 1;
+
+    entry = malloc(total_len);
+    if (entry == NULL) {
+      return -1;
+    }
+
+    entry[0] = '\0';
+
+    strcat(entry, ConnList->ssidList[i]);
+    strcat(entry, StrengthBuffer);
+
+    if (RenderList->count <= RenderList->capacity) {
+      RenderList->List[RenderList->count] = entry;
+      RenderList->count++;
+    } else {
+      printf("RenderList Overflow \n");
+      return 1;
+    }
+  }
+
+  for (int i = 0; i < NMList->count; i++) {
+    if (RenderList->count < RenderList->capacity) {
+      RenderList->List[RenderList->count] = NMList->List[i];
+      RenderList->count++;
+    }
+  }
+
+  return 0;
 }
 
 char *Create_Process(char *command) {
@@ -270,6 +339,22 @@ bool PopulateNMRelatedOptions(NMClient *client, NMList *NMList) {
   return true;
 }
 
+char **CreateRenderArray(RenderList *RenderList) {
+  char **Array =
+      malloc((sizeof(char **) * RenderList->count) + RenderList->count);
+  if (Array != NULL) {
+
+    for (int i = 0; i < RenderList->count; i++) {
+
+      size_t entrySize = sizeof(RenderList->List[i]);
+      Array[i] = RenderList->List[i];
+    }
+    return Array;
+  } else {
+    return NULL;
+  }
+}
+
 int main() {
 
   NMClient *client;
@@ -281,6 +366,9 @@ int main() {
   NMList *NMList;
   NMList = InitNMList();
 
+  RenderList *RenderList;
+  RenderList = InitRenderList();
+
   if (client != NULL) {
     // Rescan test
     GetNetworks(client, ConnList);
@@ -288,17 +376,15 @@ int main() {
     bool PopulatedList = PopulateNMRelatedOptions(client, NMList);
   }
 
-  for (int i = 0; i < ConnList->count; i++) {
-    printf("SSID: %s Strength: %d\n", ConnList->ssidList[i],
-           ConnList->strengthList[i]);
-  }
+  PopulateRenderList(RenderList, ConnList, NMList);
 
-  for (int i = 0; i < NMList->count; i++) {
-    printf("%s \n", NMList->List[i]);
-  }
+  char **Array = CreateRenderArray(RenderList);
+  // TODO RenderArrray change to string , remove \0 for each element
 
   free(ConnList);
   free(NMList);
+  free(RenderList);
+  free(Array);
 
   return 0;
 }
