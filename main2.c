@@ -194,22 +194,33 @@ void GetNetworks(NMClient *client, struct ConnList *ConnList) {
   }
 }
 
-void PopulateNMRelatedOptions(NMClient *client, struct NMList *NMList) {
-  // Enable/Disable Wifi
+int EnableDisableWifi(NMClient *client, struct NMList *NMList) {
+
   bool WifiState = (bool)nm_client_wireless_get_enabled(client);
   if (WifiState == true) {
     char *option = "Disable Wifi";
     AddNMList(NMList, option);
+    return 0;
   }
 
   else {
     char *option = "Enable Wifi";
     AddNMList(NMList, option);
+    return 0;
   }
+}
+
+void PopulateNMRelatedOptions(NMClient *client, struct NMList *NMList) {
+  // Enable/Disable Wifi
+  EnableDisableWifi(client, NMList);
   // Delete a Connection
+  AddNMList(NMList, "Delete a Connection");
   // Rescan Wifi
+  AddNMList(NMList, "Rescan Wifi");
   // Show Password
+  AddNMList(NMList, "Show Password");
   // Saved Connections
+  AddNMList(NMList, "Saved Connections");
 }
 
 int main() {
@@ -226,6 +237,8 @@ int main() {
   if (client != NULL) {
     // Rescan test
     GetNetworks(client, ConnList);
+
+    PopulateNMRelatedOptions(client, NMList);
   }
 
   for (int i = 0; i < ConnList->count; i++) {
@@ -233,8 +246,11 @@ int main() {
            ConnList->strengthList[i]);
   }
 
-  PopulateNMRelatedOptions(client, NMList);
-  printf("%s \n", NMList->List[0]);
+  for (int i = 0; i < NMList->count; i++) {
+    printf("%s \n", NMList->List[i]);
+  }
+
+  free(ConnList);
   free(NMList);
 
   return 0;
