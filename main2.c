@@ -11,9 +11,18 @@ typedef enum { false, true } bool;
 #define INITIAL_SIZE 64
 #define MAX_SIZE 4096
 
+#define CONNLIST_SIZE 20;
+#define NMLIST_SIZE 20;
+
 struct ConnList {
   char **ssidList;
   int *strengthList;
+  int count;
+  int capacity;
+};
+
+struct NMList {
+  char **List;
   int count;
   int capacity;
 };
@@ -23,7 +32,7 @@ struct ConnList *InitConnList() {
   struct ConnList *ConnList;
 
   ConnList->count = 0;
-  ConnList->capacity = 20;
+  ConnList->capacity = CONNLIST_SIZE;
   ConnList->ssidList = (char **)malloc(sizeof(char *) * ConnList->capacity);
   ConnList->strengthList = (int *)malloc(sizeof(int) * ConnList->capacity);
 
@@ -41,6 +50,32 @@ int AddConnList(struct ConnList *ConnList, char *ssid, int strength) {
   ConnList->strengthList[ConnList->count] = strength;
   ConnList->count++;
 
+  return 0;
+}
+
+struct NMList *InitNMList() {
+  struct NMList *NMList = (struct NMList *)malloc(sizeof(struct NMList));
+  if (NMList == NULL) {
+    printf("Memory allocation failed for NMList structure\n");
+    return NULL;
+  }
+
+  NMList->count = 0;
+  NMList->capacity = NMLIST_SIZE;
+  NMList->List = (char **)malloc(sizeof(char *) * NMList->capacity);
+
+  if (NMList->List == NULL) {
+    printf("Memory allocation failed for List array\n");
+    free(NMList);
+    return NULL;
+  }
+
+  return NMList;
+}
+
+int AddNMList(struct NMList *NMList, char *option) {
+  NMList->List[NMList->count] = option;
+  NMList->count++;
   return 0;
 }
 
@@ -159,6 +194,24 @@ void GetNetworks(NMClient *client, struct ConnList *ConnList) {
   }
 }
 
+void PopulateNMRelatedOptions(NMClient *client, struct NMList *NMList) {
+  // Enable/Disable Wifi
+  bool WifiState = (bool)nm_client_wireless_get_enabled(client);
+  if (WifiState == true) {
+    char *option = "Disable Wifi";
+    AddNMList(NMList, option);
+  }
+
+  else {
+    char *option = "Enable Wifi";
+    AddNMList(NMList, option);
+  }
+  // Delete a Connection
+  // Rescan Wifi
+  // Show Password
+  // Saved Connections
+}
+
 int main() {
 
   NMClient *client;
@@ -166,6 +219,9 @@ int main() {
 
   struct ConnList *ConnList;
   ConnList = InitConnList();
+
+  struct NMList *NMList;
+  NMList = InitNMList();
 
   if (client != NULL) {
     // Rescan test
@@ -176,6 +232,10 @@ int main() {
     printf("SSID: %s Strength: %d\n", ConnList->ssidList[i],
            ConnList->strengthList[i]);
   }
+
+  PopulateNMRelatedOptions(client, NMList);
+  printf("%s \n", NMList->List[0]);
+  free(NMList);
 
   return 0;
 }
