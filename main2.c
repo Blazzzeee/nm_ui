@@ -1,3 +1,4 @@
+#include "gio/gioenumtypes.h"
 #include <libnm/nm-dbus-interface.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -150,7 +151,7 @@ int PopulateRenderList(RenderList *RenderList, ConnList *ConnList,
       RenderList->count++;
     } else {
       printf("RenderList Overflow \n");
-      return 1;
+      return -1;
     }
   }
 
@@ -164,7 +165,7 @@ int PopulateRenderList(RenderList *RenderList, ConnList *ConnList,
   return 0;
 }
 
-char *Create_Process(char *command) {
+char *Create_Process(char *Rawcommand, char *args) {
   // Run shell command and return its output as a string pointer
   FILE *fp;
   char ch;
@@ -172,6 +173,18 @@ char *Create_Process(char *command) {
   // Remember to free buffer pointer
   char *buffer = malloc(INITIAL_SIZE);
   int i = 0;
+
+  // Create command along with adding args
+  size_t j = strlen(Rawcommand);
+  size_t k = strlen(args);
+  char *command = malloc(j + k + 2);
+  if (command == NULL) {
+    printf("Command string memory allocation failed \n");
+    free(buffer);
+    return NULL;
+  }
+  strcpy(command, Rawcommand);
+  strcat(command, args);
 
   fp = popen(command, "r");
 
@@ -211,7 +224,7 @@ char *Create_Process(char *command) {
     buffer[i] = '\0';
   }
   pclose(fp);
-
+  free(command);
   return buffer;
 }
 
@@ -339,24 +352,51 @@ bool PopulateNMRelatedOptions(NMClient *client, NMList *NMList) {
   return true;
 }
 
-char **CreateRenderArray(RenderList *RenderList) {
-  char **Array =
-      malloc((sizeof(char **) * RenderList->count) + RenderList->count);
-  if (Array != NULL) {
+char *CreateRenderString(RenderList *RenderList) {
+  int j = 0;
+  for (int i = 0; i < RenderList->count; i++) {
+    j += strlen(RenderList->List[i]);
+  }
 
-    for (int i = 0; i < RenderList->count; i++) {
+  char *string;
+  string = malloc(j * sizeof(char));
 
-      size_t entrySize = sizeof(RenderList->List[i]);
-      Array[i] = RenderList->List[i];
-    }
-    return Array;
-  } else {
+  if (string == NULL) {
+    printf("Memory allocation failed to string \n");
     return NULL;
   }
+  string[0] = '\0';
+  for (int i = 0; i < RenderList->count; i++) {
+    strcat(string, RenderList->List[i]);
+    strcat(string, "\n");
+  }
+
+  return string;
+}
+
+void Render(char *string) {
+  int i = strlen(string);
+  int j = strlen("echo ''");
+  char *command;
+  printf("LOG: Memory allocated for bytes %d \n", (int)(i + j + 1));
+  command = malloc((i + j + 1) * sizeof(char));
+  if (command == NULL) {
+    printf("Memory allocation failed \n");
+    return;
+  }
+  command[0] = '\0';
+  strcpy(command, "echo '");
+  strcat(command, string);
+  strcat(command, "'");
+
+  char *buffer = Create_Process(
+      command, "| rofi -dmenu -theme ~/.config/rofi/wifi/config.rasi");
+  printf("%s\n", buffer);
+  free(buffer);
+  free(command);
 }
 
 int main() {
-
   NMClient *client;
   client = CreateClient();
 
@@ -378,13 +418,14 @@ int main() {
 
   PopulateRenderList(RenderList, ConnList, NMList);
 
-  char **Array = CreateRenderArray(RenderList);
-  // TODO RenderArrray change to string , remove \0 for each element
+  char *string = CreateRenderString(RenderList);
+  printf("%s \n", string);
+
+  Render(string);
 
   free(ConnList);
   free(NMList);
   free(RenderList);
-  free(Array);
-
+  free(string);
   return 0;
 }
