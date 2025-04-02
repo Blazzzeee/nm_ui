@@ -3,7 +3,7 @@ CFLAGS = -Wall -Wextra -g $(shell pkg-config --cflags libnm)
 LDFLAGS = $(shell pkg-config --libs libnm)
 
 TARGET = nm
-SRC = main2.c
+SRC = nm_backend.c
 
 all: $(TARGET)
 
