@@ -1,17 +1,15 @@
+#include <libnm/NetworkManager.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include <libnm/NetworkManager.h>
-
 typedef enum { false, true } bool;
-
 #define INITIAL_SIZE 64
 #define SIZE_MAX 4096
 
-#define CONNLIST_SIZE 20;
-#define NMLIST_SIZE 20;
-#define RENDERLIST_SIZE 40;
+#define RENDER_LIST_SIZE 512
+
+typedef int (*onValidate)(void *);
 
 struct _renderString {
   char *string;
@@ -24,7 +22,7 @@ typedef struct _renderString RenderString;
 RenderString *InitRenderString() {
   RenderString *renderString = malloc(sizeof(RenderString));
   renderString->length = 0;
-  renderString->size = sizeof(char) * 1024;
+  renderString->size = sizeof(char) * RENDER_LIST_SIZE;
   renderString->string = (char *)malloc(renderString->size);
 
   return renderString;
@@ -34,10 +32,12 @@ void AddRenderString(char *ssid, int strength, RenderString *RenderString) {
   char strengthBuffer[4];
 
   if (RenderString->length >= RenderString->size) {
-    printf("DEBUG: Buffer Overflow reallocating size\n");
-    size_t newSize = RenderString->size * 2;
+    printf("LOG: Buffer Overflow reallocating size\n");
+    int newSize = RenderString->size * 2;
     if (newSize <= SIZE_MAX) {
       char *temp = realloc(RenderString->string, newSize);
+      printf("LOG: Reallocated sucessfully size to RenderString %zu",
+             RenderString->size);
       if (!temp) {
         RenderString->string = temp;
       }
@@ -64,7 +64,7 @@ void AddRenderString(char *ssid, int strength, RenderString *RenderString) {
   RenderString->string[RenderString->length++] = '\n';
 }
 
-char *Create_Process(char *Rawcommand, char *args) {
+char *CreateProcess(char *Rawcommand, char *args) {
   // Run shell command and return its output as a string pointer
   FILE *fp;
   char ch;
@@ -127,15 +127,17 @@ char *Create_Process(char *Rawcommand, char *args) {
   return buffer;
 }
 
-bool Validate_OP(char *output, char *expected) {
+int ValidateOP(char *output, char *expected, onValidate callback) {
   // Output is the output buffer returned by running subprocess
   // Expected is the Expected output of that command
   // The function returns whether the 'output' is similar to 'expected' or not
 
   // current approach string handling function
+
   char *match = strstr(output, expected);
   if (match != NULL) {
-    return true;
+    int result = callback((void *)true);
+    return result;
   } else {
     return false;
   }
@@ -221,7 +223,7 @@ int PopulateNetworks(NMClient *client, RenderString *RenderString) {
   }
 }
 
-int EnableDisableWifi(NMClient *client, RenderString *RenderString) {
+int GetWifiState(NMClient *client, RenderString *RenderString) {
   // Requests state of Wifi and adds appropriately to Network List
   bool WifiState = (bool)nm_client_wireless_get_enabled(client);
   if (WifiState == true) {
@@ -240,7 +242,7 @@ int EnableDisableWifi(NMClient *client, RenderString *RenderString) {
 bool PopulateNMRelatedOptions(NMClient *client, RenderString *RenderString) {
   // Adds all Netwok related options in Network List
   // Enable/Disable Wifi
-  EnableDisableWifi(client, RenderString);
+  GetWifiState(client, RenderString);
   // Delete a Connection
   AddRenderString("Delete a Connection", -1, RenderString);
   // Rescan Wifi
@@ -253,7 +255,7 @@ bool PopulateNMRelatedOptions(NMClient *client, RenderString *RenderString) {
   return true;
 }
 
-void Render(char *string) {
+char *Render(char *string) {
   int i = strlen(string);
   int j = strlen("echo ''");
   char *command;
@@ -261,18 +263,57 @@ void Render(char *string) {
   command = malloc((i + j + 1) * sizeof(char));
   if (command == NULL) {
     printf("Memory allocation failed \n");
-    return;
+    return NULL;
   }
   command[0] = '\0';
   strcpy(command, "echo '");
   strcat(command, string);
   strcat(command, "'");
 
-  char *buffer = Create_Process(
+  char *buffer = CreateProcess(
       command, "| rofi -dmenu -theme ~/.config/rofi/wifi/config.rasi");
   printf("%s\n", buffer);
-  free(buffer);
   free(command);
+
+  return buffer;
+}
+
+int EnableDisableWifi(void *args) {
+  bool Enable;
+  if (!Enable) {
+
+    Enable = (bool)args;
+
+    if (Enable == true) {
+      printf("Enable Wifi Call to IPC\n");
+      return 0;
+    }
+  }
+  printf("Disable Wifi Call to IPC\n");
+  return 0;
+}
+
+int RescanWifi(void *args) {
+  printf("Rescan async call to IPC \n");
+
+  printf("Rerender on callback \n");
+  return 0;
+}
+
+int DeleteConn(void *args) {
+  printf("Prompt user about Saved connections \n");
+  printf("Delete request to IPC \n");
+
+  printf("Notify delete sucessfull \n");
+  return 0;
+}
+
+void ProcessInput(char *Input) {
+
+  ValidateOP(Input, "Enable Wifi", &EnableDisableWifi);
+  ValidateOP(Input, "Disable Wifi", &EnableDisableWifi);
+  ValidateOP(Input, "Rescan Wifi", &RescanWifi);
+  ValidateOP(Input, "Delete a Connection", &DeleteConn);
 }
 
 int main() {
@@ -283,18 +324,21 @@ int main() {
   RenderString = InitRenderString();
 
   bool Networks, Options = false;
-  char *string;
+  char *string, *Input;
   if (client != NULL) {
     // Rescan test
     bool Networks = PopulateNetworks(client, RenderString);
 
     bool Options = PopulateNMRelatedOptions(client, RenderString);
   }
-
-  RenderString->string[RenderString->length++] = '\0';
-  printf("%s\n", RenderString->string);
-  Render(RenderString->string);
+  if (!(Networks == true && Options == true)) {
+    RenderString->string[RenderString->length++] = '\0';
+    // printf("%s\n", RenderString->string);
+    Input = Render(RenderString->string);
+    ProcessInput(Input);
+  }
 
   free(RenderString);
+  free(Input);
   return 0;
 }
