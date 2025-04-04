@@ -8,27 +8,74 @@ typedef enum { false, true } bool;
 #define SIZE_MAX 4096
 
 #define RENDER_LIST_SIZE 512
+#define MAX_ENTRIES 50
 
 typedef int (*onValidate)(void *);
 
-struct _renderString {
+struct _RenderString {
   char *string;
   size_t size;
   int length;
 };
 
-typedef struct _renderString RenderString;
+typedef struct _RenderString RenderString;
+
+struct _RenderList {
+  char **List;
+  onValidate *callbackArray;
+  int length;
+  int size;
+};
+
+typedef struct _RenderList RenderList;
 
 RenderString *InitRenderString() {
   RenderString *renderString = malloc(sizeof(RenderString));
+  if (!renderString) {
+    printf("LOG: Error: Could not allocate RenderString struct \n");
+    return NULL;
+  }
   renderString->length = 0;
   renderString->size = sizeof(char) * RENDER_LIST_SIZE;
   renderString->string = (char *)malloc(renderString->size);
+  if (!renderString->string) {
+    printf("LOG: Could not allocate memory to RenderString string \n");
+    free(renderString->string);
+    free(renderString);
+    return NULL;
+  }
 
   return renderString;
 }
 
-void AddRenderString(char *ssid, int strength, RenderString *RenderString) {
+RenderList *InitRenderList() {
+  RenderList *renderList = malloc(sizeof(RenderList));
+
+  if (!renderList) {
+    printf("LOG: Error: Could not allocate RenderList struct\n");
+    return NULL;
+  }
+
+  renderList->size = SIZE_MAX;
+  renderList->length = 0;
+
+  renderList->List = malloc(sizeof(char) * SIZE_MAX);
+  renderList->callbackArray = malloc(sizeof(onValidate) * MAX_ENTRIES);
+
+  if (!renderList->List || !renderList->callbackArray) {
+    printf("LOG: Error: Could not allocate memory for List or callbackArray\n");
+    free(renderList->List);
+    free(renderList->callbackArray);
+    free(renderList);
+    return NULL;
+  }
+
+  printf("LOG: Created RenderList \n");
+  return renderList;
+}
+
+void AddRenderEntry(char *ssid, int strength, RenderString *RenderString,
+                    RenderList *RenderList, onValidate callback) {
   char strengthBuffer[4];
 
   if (RenderString->length >= RenderString->size) {
@@ -43,6 +90,29 @@ void AddRenderString(char *ssid, int strength, RenderString *RenderString) {
       }
       RenderString->size = newSize;
     }
+  }
+
+  if (RenderList && callback) {
+
+    if (RenderList->length >= RenderList->size) {
+
+      printf("LOG: Buffer Overflow reallocating size\n");
+      int newSize = RenderList->size * 2;
+      if (newSize <= SIZE_MAX) {
+        char **temp = realloc(RenderList->List, newSize * sizeof(char *));
+        printf("LOG: Reallocated sucessfully size to RenderString %d",
+               RenderList->size);
+        if (temp) {
+          RenderList->List = temp;
+        }
+        RenderList->size = newSize;
+      }
+
+      // Handle function list overflow
+    }
+
+    RenderList->List[RenderList->length] = ssid;
+    RenderList->callbackArray[RenderList->length++] = callback;
   }
 
   for (int i = 0; i < strlen(ssid); i++) {
@@ -161,7 +231,13 @@ NMClient *CreateClient() {
   }
 }
 
-void ProcessWifiAP(NMDeviceWifi *device, RenderString *RenderString) {
+int ProcessConnect(void *args) {
+  printf("Connect call to IPC %s", (char *)args);
+  return 0;
+}
+
+void ProcessWifiAP(NMDeviceWifi *device, RenderString *RenderString,
+                   RenderList *RenderList) {
   // Request Access Point(networks : connected + available) from the current
   // device
   const GPtrArray *APList = nm_device_wifi_get_access_points(device);
@@ -184,7 +260,8 @@ void ProcessWifiAP(NMDeviceWifi *device, RenderString *RenderString) {
           // Add the ssid and signal strength to Connection List
           // AddConnList(ConnList, ssid, strength);
           // printf("DEBUG: ssid %s\n", ssid);
-          AddRenderString(ssid, strength, RenderString);
+          AddRenderEntry(ssid, strength, RenderString, RenderList,
+                         &ProcessConnect);
         }
 
       } else {
@@ -197,7 +274,8 @@ void ProcessWifiAP(NMDeviceWifi *device, RenderString *RenderString) {
   }
 }
 
-int PopulateNetworks(NMClient *client, RenderString *RenderString) {
+int PopulateNetworks(NMClient *client, RenderString *RenderString,
+                     RenderList *RenderList) {
   // Populate the Connection List with avalilable networks
 
   // Request all the available devices managed by the client
@@ -215,7 +293,7 @@ int PopulateNetworks(NMClient *client, RenderString *RenderString) {
 
         if (deviceType == NM_DEVICE_TYPE_WIFI) {
           // ProcessWifiAP adds networks to Connection List
-          ProcessWifiAP((NMDeviceWifi *)device, RenderString);
+          ProcessWifiAP((NMDeviceWifi *)device, RenderString, RenderList);
         }
       }
     }
@@ -228,29 +306,62 @@ int GetWifiState(NMClient *client, RenderString *RenderString) {
   bool WifiState = (bool)nm_client_wireless_get_enabled(client);
   if (WifiState == true) {
     char *option = "Disable Wifi";
-    AddRenderString(option, -1, RenderString);
+    AddRenderEntry(option, -1, RenderString, NULL, NULL);
     return 0;
   }
 
   else {
     char *option = "Enable Wifi";
-    AddRenderString(option, -1, RenderString);
+    AddRenderEntry(option, -1, RenderString, NULL, NULL);
     return 0;
   }
 }
 
-bool PopulateNMRelatedOptions(NMClient *client, RenderString *RenderString) {
+int RescanWifi(void *args) {
+  printf("Rescan async call to IPC \n");
+
+  printf("Rerender on callback \n");
+  return 0;
+}
+
+int DeleteConn(void *args) {
+  printf("Prompt user about Saved connections \n");
+  printf("Delete request to IPC \n");
+
+  printf("Notify delete sucessfull \n");
+  return 0;
+}
+
+int EnableDisableWifi(void *args) {
+  // Callback called by on Validating input for Enable or Disable Wifi
+  bool Enable;
+  if (!Enable) {
+
+    Enable = (bool)args;
+
+    if (Enable == true) {
+      printf("Enable Wifi Call to IPC\n");
+      return 0;
+    }
+  }
+  printf("Disable Wifi Call to IPC\n");
+  return 0;
+}
+
+bool PopulateNMRelatedOptions(NMClient *client, RenderString *RenderString,
+                              RenderList *RenderList) {
   // Adds all Netwok related options in Network List
   // Enable/Disable Wifi
   GetWifiState(client, RenderString);
   // Delete a Connection
-  AddRenderString("Delete a Connection", -1, RenderString);
+  AddRenderEntry("Delete a Connection", -1, RenderString, RenderList,
+                 &DeleteConn);
   // Rescan Wifi
-  AddRenderString("Rescan Wifi", -1, RenderString);
+  AddRenderEntry("Rescan Wifi", -1, RenderString, RenderList, &RescanWifi);
   // Show Password
-  AddRenderString("Show Password", -1, RenderString);
+  AddRenderEntry("Show Password", -1, RenderString, RenderList, NULL);
   // Saved Connections
-  AddRenderString("Saved Connections", -1, RenderString);
+  AddRenderEntry("Saved Connections", -1, RenderString, RenderList, NULL);
 
   return true;
 }
@@ -278,36 +389,6 @@ char *Render(char *string) {
   return buffer;
 }
 
-int EnableDisableWifi(void *args) {
-  bool Enable;
-  if (!Enable) {
-
-    Enable = (bool)args;
-
-    if (Enable == true) {
-      printf("Enable Wifi Call to IPC\n");
-      return 0;
-    }
-  }
-  printf("Disable Wifi Call to IPC\n");
-  return 0;
-}
-
-int RescanWifi(void *args) {
-  printf("Rescan async call to IPC \n");
-
-  printf("Rerender on callback \n");
-  return 0;
-}
-
-int DeleteConn(void *args) {
-  printf("Prompt user about Saved connections \n");
-  printf("Delete request to IPC \n");
-
-  printf("Notify delete sucessfull \n");
-  return 0;
-}
-
 void ProcessInput(char *Input) {
 
   ValidateOP(Input, "Enable Wifi", &EnableDisableWifi);
@@ -323,13 +404,16 @@ int main() {
   RenderString *RenderString;
   RenderString = InitRenderString();
 
+  RenderList *RenderList;
+  RenderList = InitRenderList();
+
   bool Networks, Options = false;
   char *string, *Input;
   if (client != NULL) {
     // Rescan test
-    bool Networks = PopulateNetworks(client, RenderString);
+    bool Networks = PopulateNetworks(client, RenderString, RenderList);
 
-    bool Options = PopulateNMRelatedOptions(client, RenderString);
+    bool Options = PopulateNMRelatedOptions(client, RenderString, RenderList);
   }
   if (!(Networks == true && Options == true)) {
     RenderString->string[RenderString->length++] = '\0';
@@ -338,7 +422,15 @@ int main() {
     ProcessInput(Input);
   }
 
+  for (int i = 0; i < RenderList->length; i++) {
+    printf("%s  entry registered \n", RenderList->List[i]);
+  }
+
+  free(RenderString->string);
   free(RenderString);
+  free(RenderList->List);
+  free(RenderList->callbackArray);
+  free(RenderList);
   free(Input);
   return 0;
 }
