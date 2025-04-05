@@ -1,4 +1,5 @@
 #include <libnm/NetworkManager.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +29,14 @@ struct _RenderList {
 };
 
 typedef struct _RenderList RenderList;
+
+struct _SessionContext {
+  NMClient *client;
+  RenderString *RenderString;
+  RenderList *RenderList;
+};
+
+typedef struct _SessionContext SessionContext;
 
 RenderString *InitRenderString() {
   RenderString *renderString = malloc(sizeof(RenderString));
@@ -74,64 +83,73 @@ RenderList *InitRenderList() {
   return renderList;
 }
 
-void AddRenderEntry(char *ssid, int strength, RenderString *RenderString,
-                    RenderList *RenderList, onValidate callback) {
+void AddRenderEntry(char *ssid, int strength, SessionContext *SessionContext,
+                    onValidate callback) {
   char strengthBuffer[4];
 
-  if (RenderString->length >= RenderString->size) {
+  if (SessionContext->RenderString->length >=
+      SessionContext->RenderString->size) {
     printf("LOG: Buffer Overflow reallocating size\n");
-    int newSize = RenderString->size * 2;
+    int newSize = SessionContext->RenderString->size * 2;
     if (newSize <= SIZE_MAX) {
-      char *temp = realloc(RenderString->string, newSize);
+      char *temp = realloc(SessionContext->RenderString->string, newSize);
       printf("LOG: Reallocated sucessfully size to RenderString %zu",
-             RenderString->size);
+             SessionContext->RenderString->size);
       if (!temp) {
-        RenderString->string = temp;
+        SessionContext->RenderString->string = temp;
       }
-      RenderString->size = newSize;
+      SessionContext->RenderString->size = newSize;
     }
   }
 
-  if (RenderList && callback) {
+  if (SessionContext->RenderList && callback) {
 
-    if (RenderList->length >= RenderList->size) {
+    if (SessionContext->RenderList->length >=
+        SessionContext->RenderList->size) {
 
       printf("LOG: Buffer Overflow reallocating size\n");
-      int newSize = RenderList->size * 2;
+      int newSize = SessionContext->RenderList->size * 2;
       if (newSize <= SIZE_MAX) {
-        char **temp = realloc(RenderList->List, newSize * sizeof(char *));
+        char **temp =
+            realloc(SessionContext->RenderList->List, newSize * sizeof(char *));
         printf("LOG: Reallocated sucessfully size to RenderString %d",
-               RenderList->size);
+               SessionContext->RenderList->size);
         if (temp) {
-          RenderList->List = temp;
+          SessionContext->RenderList->List = temp;
         }
-        RenderList->size = newSize;
+        SessionContext->RenderList->size = newSize;
       }
 
       // Handle function list overflow
     }
 
-    RenderList->List[RenderList->length] = ssid;
-    RenderList->callbackArray[RenderList->length++] = callback;
+    SessionContext->RenderList->List[SessionContext->RenderList->length] = ssid;
+    SessionContext->RenderList
+        ->callbackArray[SessionContext->RenderList->length++] = callback;
   }
 
   for (int i = 0; i < strlen(ssid); i++) {
-    RenderString->string[RenderString->length++] = ssid[i];
+    SessionContext->RenderString
+        ->string[SessionContext->RenderString->length++] = ssid[i];
   }
 
-  RenderString->string[RenderString->length++] = ' ';
+  SessionContext->RenderString->string[SessionContext->RenderString->length++] =
+      ' ';
   if (strength != -1) {
 
     snprintf(strengthBuffer, 4, "%d", strength);
     for (int i = 0; i < 3; i++) {
       if (strengthBuffer[i] != '\0') {
 
-        RenderString->string[RenderString->length++] = strengthBuffer[i];
+        SessionContext->RenderString
+            ->string[SessionContext->RenderString->length++] =
+            strengthBuffer[i];
       }
     }
   }
 
-  RenderString->string[RenderString->length++] = '\n';
+  SessionContext->RenderString->string[SessionContext->RenderString->length++] =
+      '\n';
 }
 
 char *CreateProcess(char *Rawcommand, char *args) {
@@ -236,8 +254,7 @@ int ProcessConnect(void *args) {
   return 0;
 }
 
-void ProcessWifiAP(NMDeviceWifi *device, RenderString *RenderString,
-                   RenderList *RenderList) {
+void ProcessWifiAP(NMDeviceWifi *device, SessionContext *SessionContext) {
   // Request Access Point(networks : connected + available) from the current
   // device
   const GPtrArray *APList = nm_device_wifi_get_access_points(device);
@@ -260,8 +277,7 @@ void ProcessWifiAP(NMDeviceWifi *device, RenderString *RenderString,
           // Add the ssid and signal strength to Connection List
           // AddConnList(ConnList, ssid, strength);
           // printf("DEBUG: ssid %s\n", ssid);
-          AddRenderEntry(ssid, strength, RenderString, RenderList,
-                         &ProcessConnect);
+          AddRenderEntry(ssid, strength, SessionContext, &ProcessConnect);
         }
 
       } else {
@@ -274,12 +290,11 @@ void ProcessWifiAP(NMDeviceWifi *device, RenderString *RenderString,
   }
 }
 
-int PopulateNetworks(NMClient *client, RenderString *RenderString,
-                     RenderList *RenderList) {
+int PopulateNetworks(SessionContext *SessionContext) {
   // Populate the Connection List with avalilable networks
 
   // Request all the available devices managed by the client
-  const GPtrArray *devices = nm_client_get_devices(client);
+  const GPtrArray *devices = nm_client_get_devices(SessionContext->client);
 
   if (devices == NULL) {
     printf("Erorr requesting devices from client \n");
@@ -293,7 +308,7 @@ int PopulateNetworks(NMClient *client, RenderString *RenderString,
 
         if (deviceType == NM_DEVICE_TYPE_WIFI) {
           // ProcessWifiAP adds networks to Connection List
-          ProcessWifiAP((NMDeviceWifi *)device, RenderString, RenderList);
+          ProcessWifiAP((NMDeviceWifi *)device, SessionContext);
         }
       }
     }
@@ -301,18 +316,18 @@ int PopulateNetworks(NMClient *client, RenderString *RenderString,
   }
 }
 
-int GetWifiState(NMClient *client, RenderString *RenderString) {
+int GetWifiState(SessionContext *SessionContext) {
   // Requests state of Wifi and adds appropriately to Network List
-  bool WifiState = (bool)nm_client_wireless_get_enabled(client);
+  bool WifiState = (bool)nm_client_wireless_get_enabled(SessionContext->client);
   if (WifiState == true) {
     char *option = "Disable Wifi";
-    AddRenderEntry(option, -1, RenderString, NULL, NULL);
+    AddRenderEntry(option, -1, SessionContext, NULL);
     return 0;
   }
 
   else {
     char *option = "Enable Wifi";
-    AddRenderEntry(option, -1, RenderString, NULL, NULL);
+    AddRenderEntry(option, -1, SessionContext, NULL);
     return 0;
   }
 }
@@ -348,20 +363,18 @@ int EnableDisableWifi(void *args) {
   return 0;
 }
 
-bool PopulateNMRelatedOptions(NMClient *client, RenderString *RenderString,
-                              RenderList *RenderList) {
+bool PopulateNMRelatedOptions(SessionContext *SessionContext) {
   // Adds all Netwok related options in Network List
   // Enable/Disable Wifi
-  GetWifiState(client, RenderString);
+  GetWifiState(SessionContext);
   // Delete a Connection
-  AddRenderEntry("Delete a Connection", -1, RenderString, RenderList,
-                 &DeleteConn);
+  AddRenderEntry("Delete a Connection", -1, SessionContext, &DeleteConn);
   // Rescan Wifi
-  AddRenderEntry("Rescan Wifi", -1, RenderString, RenderList, &RescanWifi);
+  AddRenderEntry("Rescan Wifi", -1, SessionContext, &RescanWifi);
   // Show Password
-  AddRenderEntry("Show Password", -1, RenderString, RenderList, NULL);
+  AddRenderEntry("Show Password", -1, SessionContext, NULL);
   // Saved Connections
-  AddRenderEntry("Saved Connections", -1, RenderString, RenderList, NULL);
+  AddRenderEntry("Saved Connections", -1, SessionContext, NULL);
 
   return true;
 }
@@ -397,7 +410,43 @@ void ProcessInput(char *Input) {
   ValidateOP(Input, "Delete a Connection", &DeleteConn);
 }
 
-int main() {
+void *testThread(void *args) {
+  printf("Sucessfull Thread creation \n");
+  printf("Recieved Validation %s \n", (char *)args);
+  printf("Validating Logic for %s\n", (char *)args);
+  printf("Thread finished for %s \n", (char *)args);
+  return NULL;
+}
+
+void CreateThreads(SessionContext *SessionContext) {
+
+  // Initialise Thread array
+  pthread_t *threadArray;
+  int *args;
+  // Assign memory dynamically depending on nummber of Entries rendered
+  threadArray = malloc(sizeof(pthread_t) * SessionContext->RenderList->length);
+
+  if (!threadArray) {
+    printf("LOG: Level: Critical Error could not allocate pthread Array \n");
+    return;
+  }
+
+  // Create Threads
+  for (int i = 0; i < SessionContext->RenderList->length; i++) {
+    pthread_create(&threadArray[i], NULL, testThread,
+                   (void *)SessionContext->RenderList->List[i]);
+  }
+  // Wait for threads to finish
+
+  for (int i = 0; i < SessionContext->RenderList->length; i++) {
+    *args = i + 1;
+    pthread_join(threadArray[i], NULL);
+    printf("Joined Thread: %d\n", *args);
+  }
+}
+
+SessionContext *InitialiseSession() {
+  // Initialise Session Context
   NMClient *client;
   client = CreateClient();
 
@@ -407,30 +456,48 @@ int main() {
   RenderList *RenderList;
   RenderList = InitRenderList();
 
+  SessionContext *SessionContext;
+  SessionContext = malloc(sizeof(SessionContext));
+
+  SessionContext->client = client;
+  SessionContext->RenderList = RenderList;
+  SessionContext->RenderString = RenderString;
+
+  if (!SessionContext) {
+    printf("LOG: Error could not allocate memory to Session Context \n");
+    return NULL;
+  }
+
+  return SessionContext;
+}
+
+int main() {
+
+  SessionContext *SessionContext;
+  SessionContext = InitialiseSession();
+
   bool Networks, Options = false;
   char *string, *Input;
-  if (client != NULL) {
+  if (SessionContext->client != NULL) {
     // Rescan test
-    bool Networks = PopulateNetworks(client, RenderString, RenderList);
+    bool Networks = PopulateNetworks(SessionContext);
 
-    bool Options = PopulateNMRelatedOptions(client, RenderString, RenderList);
+    bool Options = PopulateNMRelatedOptions(SessionContext);
   }
   if (!(Networks == true && Options == true)) {
-    RenderString->string[RenderString->length++] = '\0';
+    SessionContext->RenderString
+        ->string[SessionContext->RenderString->length++] = '\0';
     // printf("%s\n", RenderString->string);
-    Input = Render(RenderString->string);
-    ProcessInput(Input);
+    // Input = Render(SessionContext->RenderString->string);
+    // ProcessInput(Input);
+    CreateThreads(SessionContext);
   }
 
-  for (int i = 0; i < RenderList->length; i++) {
-    printf("%s  entry registered \n", RenderList->List[i]);
-  }
-
-  free(RenderString->string);
-  free(RenderString);
-  free(RenderList->List);
-  free(RenderList->callbackArray);
-  free(RenderList);
-  free(Input);
+  free(SessionContext->RenderString->string);
+  free(SessionContext->RenderString);
+  free(SessionContext->RenderList->List);
+  free(SessionContext->RenderList->callbackArray);
+  free(SessionContext->RenderList);
+  // free(Input);
   return 0;
 }
