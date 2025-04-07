@@ -1,3 +1,4 @@
+#include "glib.h"
 #include <libnm/NetworkManager.h>
 #include <libnm/nm-dbus-interface.h>
 #include <pthread.h>
@@ -35,6 +36,7 @@ struct _SessionContext {
   NMClient *client;
   RenderString *RenderString;
   RenderList *RenderList;
+  GMainLoop *loop;
 };
 
 typedef struct _SessionContext SessionContext;
@@ -255,6 +257,81 @@ NMClient *CreateClient() {
   }
 }
 
+// Section Callbacks
+
+static void property_set_callback(GObject *object, GAsyncResult *result,
+                                  gpointer user_data) {
+  // Called by nm_client_dbus_set_property after the GMainLoop is run
+  // the GMainLoop processes all the async callbacks that were registered
+  GMainLoop *loop = (GMainLoop *)user_data;
+  GError *error = NULL;
+  nm_client_dbus_set_property_finish(NM_CLIENT(object), result, &error);
+  if (error) {
+    g_printerr("Error setting property: %s\n", error->message);
+    g_error_free(error);
+  } else {
+    g_print("Successfully set WirelessEnabled property.\n");
+  }
+  g_main_loop_quit(loop);
+}
+
+void *EnableWifi(void *args) {
+  // Callback called by on Validating input for Enable Wifi
+
+  // The GMainLoop must be started to register your async callbacks
+  // In our case we use property_set_callback to complete the async callback
+  // operation that was registered
+
+  GVariant *val = g_variant_new_boolean(TRUE);
+  nm_client_dbus_set_property(global_ctx->client, NM_DBUS_PATH,
+                              NM_DBUS_INTERFACE, "WirelessEnabled", val, -1,
+                              NULL, property_set_callback, global_ctx->loop);
+  printf("Enable Wifi Call to IPC\n");
+  return NULL;
+}
+
+void *DisableWifi(void *args) {
+
+  GVariant *val = g_variant_new_boolean(FALSE);
+  nm_client_dbus_set_property(global_ctx->client, NM_DBUS_PATH,
+                              NM_DBUS_INTERFACE, "WirelessEnabled", val, -1,
+                              NULL, property_set_callback, global_ctx->loop);
+  printf("Disable Wifi Call to IPC\n");
+
+  return NULL;
+}
+
+void *RescanWifi(void *args) {
+  printf("Rescan async call to IPC \n");
+
+  printf("Rerender on callback \n");
+  return NULL;
+}
+
+void *DeleteConn(void *args) {
+  printf("Prompt user about Saved connections \n");
+  printf("Delete request to IPC \n");
+
+  printf("Notify delete sucessfull \n");
+  return NULL;
+}
+
+int GetWifiState(SessionContext *SessionContext) {
+  // Requests state of Wifi and adds appropriately to Network List
+  bool WifiState = (bool)nm_client_wireless_get_enabled(SessionContext->client);
+  if (WifiState == true) {
+    char *option = "Disable Wifi";
+    AddRenderEntry(option, -1, SessionContext, &DisableWifi);
+    return 0;
+  }
+
+  else {
+    char *option = "Enable Wifi";
+    AddRenderEntry(option, -1, SessionContext, &EnableWifi);
+    return 0;
+  }
+}
+
 void *ProcessConnect(void *args) {
   printf("Connect call to IPC \n");
   return 0;
@@ -274,7 +351,7 @@ void ProcessWifiAP(NMDeviceWifi *device, SessionContext *SessionContext) {
         guint strength = nm_access_point_get_strength(AP);
         // request signal strength
         if (ssid_bytes) {
-          // Replacable by nm_utils_ssid_to_utf-8
+          // TODO Replace by nm_utils_ssid_to_utf-8
           // if the bytes are valid
           gsize len;
           // change bytes to data
@@ -323,68 +400,6 @@ int PopulateNetworks(SessionContext *SessionContext) {
   }
 }
 
-void *EnableWifi(void *args) {
-  // Callback called by on Validating input for Enable or Disable Wifi
-  // Enable Wi-Fi
-  nm_client_dbus_set_property(global_ctx->client, NM_DBUS_PATH,
-                              NM_DBUS_INTERFACE, "WirelessEnabled",
-                              g_variant_new("(b)", TRUE), -1, NULL, NULL, NULL);
-  printf("Enabled Wifi Interface \n");
-  return NULL;
-}
-
-static void on_wifi_toggle_done(GObject *source, GAsyncResult *res,
-                                gpointer user_data) {
-  GError *error = NULL;
-
-  if (!nm_client_dbus_set_property_finish(NM_CLIENT(source), res, &error)) {
-    g_printerr("Wi-Fi toggle failed: %s\n", error->message);
-    g_clear_error(&error);
-  } else {
-    g_print("Wi-Fi toggle succeeded.\n");
-  }
-}
-void *DisableWifi(void *args) {
-  // nm_device_disconnect_async
-  // Callback called by on Validating input for Enable or Disable Wifi
-  nm_client_dbus_set_property(global_ctx->client, NM_DBUS_PATH,
-                              NM_DBUS_INTERFACE, "WirelessEnabled",
-                              g_variant_new("(b)", TRUE), -1, NULL, NULL, NULL);
-  printf("Disable Wifi Call to IPC\n");
-  return NULL;
-}
-
-int GetWifiState(SessionContext *SessionContext) {
-  // Requests state of Wifi and adds appropriately to Network List
-  bool WifiState = (bool)nm_client_wireless_get_enabled(SessionContext->client);
-  if (WifiState == true) {
-    char *option = "Disable Wifi";
-    AddRenderEntry(option, -1, SessionContext, &DisableWifi);
-    return 0;
-  }
-
-  else {
-    char *option = "Enable Wifi";
-    AddRenderEntry(option, -1, SessionContext, &EnableWifi);
-    return 0;
-  }
-}
-
-void *RescanWifi(void *args) {
-  printf("Rescan async call to IPC \n");
-
-  printf("Rerender on callback \n");
-  return NULL;
-}
-
-void *DeleteConn(void *args) {
-  printf("Prompt user about Saved connections \n");
-  printf("Delete request to IPC \n");
-
-  printf("Notify delete sucessfull \n");
-  return NULL;
-}
-
 bool PopulateNMRelatedOptions(SessionContext *SessionContext) {
   // Adds all Netwok related options in Network List
   // Enable/Disable Wifi
@@ -402,6 +417,7 @@ bool PopulateNMRelatedOptions(SessionContext *SessionContext) {
 }
 
 char *Render(char *string) {
+  // Construct the render command to render GUI
   int i = strlen(string);
   int j = strlen("echo ''");
   char *command;
@@ -415,22 +431,15 @@ char *Render(char *string) {
   strcpy(command, "echo '");
   strcat(command, string);
   strcat(command, "'");
-
+  // Capture output of the process by allocating buffer using CreateBuffer
+  // TODO Trim symbols from user input
   char *buffer = CreateProcess(
       command, "| rofi -dmenu -theme ~/.config/rofi/wifi/config.rasi");
   printf("%s\n", buffer);
   free(command);
 
+  // Remember to free output buffer
   return buffer;
-}
-
-SessionContext *global_ctx;
-
-void *callback(void *args) {
-  int val = *(int *)args;
-  printf("%d Thread processing %s\n", val, global_ctx->RenderList->List[val]);
-
-  return NULL;
 }
 
 void CreateThreads(SessionContext *SessionContext) {
@@ -438,6 +447,8 @@ void CreateThreads(SessionContext *SessionContext) {
   // Initialise Thread array
   pthread_t *threadArray;
   int *args;
+
+  global_ctx->loop = g_main_loop_new(NULL, TRUE);
   // Assign memory dynamically depending on nummber of Entries rendered
   threadArray = malloc(sizeof(pthread_t) * SessionContext->RenderList->length);
 
@@ -451,6 +462,7 @@ void CreateThreads(SessionContext *SessionContext) {
     printf("LOG: Critical Could not allocate memory to args Array \n");
     return;
   }
+
   // Create Threads
   for (int i = 0; i < SessionContext->RenderList->length; i++) {
     args[i] = i;
@@ -498,9 +510,9 @@ int main() {
 
   bool Networks, Options = false;
   char *string;
-  void *args;
+  void *args = NULL;
+
   if (global_ctx->client != NULL) {
-    // Rescan test
     bool Networks = PopulateNetworks(global_ctx);
 
     bool Options = PopulateNMRelatedOptions(global_ctx);
@@ -508,17 +520,17 @@ int main() {
   if (!(Networks == true && Options == true)) {
     global_ctx->RenderString->string[global_ctx->RenderString->length++] = '\0';
     // printf("%s\n", RenderString->string);
-    // Input = Render(global_ctx->RenderString->string);
-    // ProcessInput(Input);
-    // CreateThreads(global_ctx);
-    DisableWifi(args);
+    Input = Render(global_ctx->RenderString->string);
+    CreateThreads(global_ctx);
   }
+
+  g_main_loop_run(global_ctx->loop);
 
   free(global_ctx->RenderString->string);
   free(global_ctx->RenderString);
   free(global_ctx->RenderList->List);
   free(global_ctx->RenderList->callbackArray);
   free(global_ctx->RenderList);
-  // free(Input);
+  free(Input);
   return 0;
 }
