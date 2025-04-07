@@ -1,4 +1,5 @@
 #include <libnm/NetworkManager.h>
+#include <libnm/nm-dbus-interface.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +12,7 @@ typedef enum { false, true } bool;
 #define RENDER_LIST_SIZE 512
 #define MAX_ENTRIES 50
 
-typedef int (*onValidate)(void *);
+typedef void *(*onValidate)(void *);
 
 struct _RenderString {
   char *string;
@@ -37,6 +38,10 @@ struct _SessionContext {
 };
 
 typedef struct _SessionContext SessionContext;
+
+SessionContext *global_ctx;
+
+char *Input;
 
 RenderString *InitRenderString() {
   RenderString *renderString = malloc(sizeof(RenderString));
@@ -215,19 +220,20 @@ char *CreateProcess(char *Rawcommand, char *args) {
   return buffer;
 }
 
-int ValidateOP(char *output, char *expected, onValidate callback) {
+void *ValidateOP(void *args) {
   // Output is the output buffer returned by running subprocess
   // Expected is the Expected output of that command
   // The function returns whether the 'output' is similar to 'expected' or not
 
   // current approach string handling function
-
-  char *match = strstr(output, expected);
+  void *callbackArgs;
+  int i = *(int *)args;
+  char *match = strstr(Input, global_ctx->RenderList->List[i]);
   if (match != NULL) {
-    int result = callback((void *)true);
-    return result;
+    // TODO Create a thread to suspend all the running threads on finding a
+    // match
+    global_ctx->RenderList->callbackArray[i](callbackArgs);
   } else {
-    return false;
   }
 }
 
@@ -249,8 +255,8 @@ NMClient *CreateClient() {
   }
 }
 
-int ProcessConnect(void *args) {
-  printf("Connect call to IPC %s", (char *)args);
+void *ProcessConnect(void *args) {
+  printf("Connect call to IPC \n");
   return 0;
 }
 
@@ -268,6 +274,7 @@ void ProcessWifiAP(NMDeviceWifi *device, SessionContext *SessionContext) {
         guint strength = nm_access_point_get_strength(AP);
         // request signal strength
         if (ssid_bytes) {
+          // Replacable by nm_utils_ssid_to_utf-8
           // if the bytes are valid
           gsize len;
           // change bytes to data
@@ -316,51 +323,66 @@ int PopulateNetworks(SessionContext *SessionContext) {
   }
 }
 
+void *EnableWifi(void *args) {
+  // Callback called by on Validating input for Enable or Disable Wifi
+  // Enable Wi-Fi
+  nm_client_dbus_set_property(global_ctx->client, NM_DBUS_PATH,
+                              NM_DBUS_INTERFACE, "WirelessEnabled",
+                              g_variant_new("(b)", TRUE), -1, NULL, NULL, NULL);
+  printf("Enabled Wifi Interface \n");
+  return NULL;
+}
+
+static void on_wifi_toggle_done(GObject *source, GAsyncResult *res,
+                                gpointer user_data) {
+  GError *error = NULL;
+
+  if (!nm_client_dbus_set_property_finish(NM_CLIENT(source), res, &error)) {
+    g_printerr("Wi-Fi toggle failed: %s\n", error->message);
+    g_clear_error(&error);
+  } else {
+    g_print("Wi-Fi toggle succeeded.\n");
+  }
+}
+void *DisableWifi(void *args) {
+  // nm_device_disconnect_async
+  // Callback called by on Validating input for Enable or Disable Wifi
+  nm_client_dbus_set_property(global_ctx->client, NM_DBUS_PATH,
+                              NM_DBUS_INTERFACE, "WirelessEnabled",
+                              g_variant_new("(b)", TRUE), -1, NULL, NULL, NULL);
+  printf("Disable Wifi Call to IPC\n");
+  return NULL;
+}
+
 int GetWifiState(SessionContext *SessionContext) {
   // Requests state of Wifi and adds appropriately to Network List
   bool WifiState = (bool)nm_client_wireless_get_enabled(SessionContext->client);
   if (WifiState == true) {
     char *option = "Disable Wifi";
-    AddRenderEntry(option, -1, SessionContext, NULL);
+    AddRenderEntry(option, -1, SessionContext, &DisableWifi);
     return 0;
   }
 
   else {
     char *option = "Enable Wifi";
-    AddRenderEntry(option, -1, SessionContext, NULL);
+    AddRenderEntry(option, -1, SessionContext, &EnableWifi);
     return 0;
   }
 }
 
-int RescanWifi(void *args) {
+void *RescanWifi(void *args) {
   printf("Rescan async call to IPC \n");
 
   printf("Rerender on callback \n");
-  return 0;
+  return NULL;
 }
 
-int DeleteConn(void *args) {
+void *DeleteConn(void *args) {
   printf("Prompt user about Saved connections \n");
   printf("Delete request to IPC \n");
 
   printf("Notify delete sucessfull \n");
-  return 0;
-}
-
-int EnableDisableWifi(void *args) {
-  // Callback called by on Validating input for Enable or Disable Wifi
-  bool Enable;
-  if (!Enable) {
-
-    Enable = (bool)args;
-
-    if (Enable == true) {
-      printf("Enable Wifi Call to IPC\n");
-      return 0;
-    }
-  }
-  printf("Disable Wifi Call to IPC\n");
-  return 0;
+  return NULL;
 }
 
 bool PopulateNMRelatedOptions(SessionContext *SessionContext) {
@@ -402,19 +424,12 @@ char *Render(char *string) {
   return buffer;
 }
 
-void ProcessInput(char *Input) {
+SessionContext *global_ctx;
 
-  ValidateOP(Input, "Enable Wifi", &EnableDisableWifi);
-  ValidateOP(Input, "Disable Wifi", &EnableDisableWifi);
-  ValidateOP(Input, "Rescan Wifi", &RescanWifi);
-  ValidateOP(Input, "Delete a Connection", &DeleteConn);
-}
+void *callback(void *args) {
+  int val = *(int *)args;
+  printf("%d Thread processing %s\n", val, global_ctx->RenderList->List[val]);
 
-void *testThread(void *args) {
-  printf("Sucessfull Thread creation \n");
-  printf("Recieved Validation %s \n", (char *)args);
-  printf("Validating Logic for %s\n", (char *)args);
-  printf("Thread finished for %s \n", (char *)args);
   return NULL;
 }
 
@@ -431,10 +446,16 @@ void CreateThreads(SessionContext *SessionContext) {
     return;
   }
 
+  args = malloc(sizeof(int) * SessionContext->RenderList->length);
+  if (!args) {
+    printf("LOG: Critical Could not allocate memory to args Array \n");
+    return;
+  }
   // Create Threads
   for (int i = 0; i < SessionContext->RenderList->length; i++) {
-    pthread_create(&threadArray[i], NULL, testThread,
-                   (void *)SessionContext->RenderList->List[i]);
+    args[i] = i;
+    pthread_create(&threadArray[i], NULL, ValidateOP,
+                   (void *)args + (i * sizeof(int)));
   }
   // Wait for threads to finish
 
@@ -473,31 +494,31 @@ SessionContext *InitialiseSession() {
 
 int main() {
 
-  SessionContext *SessionContext;
-  SessionContext = InitialiseSession();
+  global_ctx = InitialiseSession();
 
   bool Networks, Options = false;
-  char *string, *Input;
-  if (SessionContext->client != NULL) {
+  char *string;
+  void *args;
+  if (global_ctx->client != NULL) {
     // Rescan test
-    bool Networks = PopulateNetworks(SessionContext);
+    bool Networks = PopulateNetworks(global_ctx);
 
-    bool Options = PopulateNMRelatedOptions(SessionContext);
+    bool Options = PopulateNMRelatedOptions(global_ctx);
   }
   if (!(Networks == true && Options == true)) {
-    SessionContext->RenderString
-        ->string[SessionContext->RenderString->length++] = '\0';
+    global_ctx->RenderString->string[global_ctx->RenderString->length++] = '\0';
     // printf("%s\n", RenderString->string);
-    // Input = Render(SessionContext->RenderString->string);
+    // Input = Render(global_ctx->RenderString->string);
     // ProcessInput(Input);
-    CreateThreads(SessionContext);
+    // CreateThreads(global_ctx);
+    DisableWifi(args);
   }
 
-  free(SessionContext->RenderString->string);
-  free(SessionContext->RenderString);
-  free(SessionContext->RenderList->List);
-  free(SessionContext->RenderList->callbackArray);
-  free(SessionContext->RenderList);
+  free(global_ctx->RenderString->string);
+  free(global_ctx->RenderString);
+  free(global_ctx->RenderList->List);
+  free(global_ctx->RenderList->callbackArray);
+  free(global_ctx->RenderList);
   // free(Input);
   return 0;
 }
