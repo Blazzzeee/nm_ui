@@ -37,13 +37,15 @@ struct _SessionContext {
   RenderString *RenderString;
   RenderList *RenderList;
   GMainLoop *loop;
+  bool RegisteredActions;
+  char *Input;
 };
 
 typedef struct _SessionContext SessionContext;
 
 SessionContext *global_ctx;
 
-char *Input;
+// Section Data Structhures
 
 RenderString *InitRenderString() {
   RenderString *renderString = malloc(sizeof(RenderString));
@@ -159,6 +161,8 @@ void AddRenderEntry(char *ssid, int strength, SessionContext *SessionContext,
       '\n';
 }
 
+// Section Helpers
+
 char *CreateProcess(char *Rawcommand, char *args) {
   // Run shell command and return its output as a string pointer
   FILE *fp;
@@ -230,7 +234,7 @@ void *ValidateOP(void *args) {
   // current approach string handling function
   void *callbackArgs;
   int i = *(int *)args;
-  char *match = strstr(Input, global_ctx->RenderList->List[i]);
+  char *match = strstr(global_ctx->Input, global_ctx->RenderList->List[i]);
   if (match != NULL) {
     // TODO Create a thread to suspend all the running threads on finding a
     // match
@@ -286,6 +290,7 @@ void *EnableWifi(void *args) {
   nm_client_dbus_set_property(global_ctx->client, NM_DBUS_PATH,
                               NM_DBUS_INTERFACE, "WirelessEnabled", val, -1,
                               NULL, property_set_callback, global_ctx->loop);
+  global_ctx->RegisteredActions = true;
   printf("Enable Wifi Call to IPC\n");
   return NULL;
 }
@@ -298,6 +303,7 @@ void *DisableWifi(void *args) {
                               NULL, property_set_callback, global_ctx->loop);
   printf("Disable Wifi Call to IPC\n");
 
+  global_ctx->RegisteredActions = true;
   return NULL;
 }
 
@@ -374,7 +380,7 @@ void ProcessWifiAP(NMDeviceWifi *device, SessionContext *SessionContext) {
   }
 }
 
-int PopulateNetworks(SessionContext *SessionContext) {
+void *PopulateNetworks(SessionContext *SessionContext) {
   // Populate the Connection List with avalilable networks
 
   // Request all the available devices managed by the client
@@ -382,7 +388,7 @@ int PopulateNetworks(SessionContext *SessionContext) {
 
   if (devices == NULL) {
     printf("Erorr requesting devices from client \n");
-    return false;
+    return NULL;
   } else {
     for (guint i = 0; i < devices->len; i++) {
       // Iterate over GPtrArray , request APs for wifi device
@@ -396,11 +402,11 @@ int PopulateNetworks(SessionContext *SessionContext) {
         }
       }
     }
-    return true;
+    return NULL;
   }
 }
 
-bool PopulateNMRelatedOptions(SessionContext *SessionContext) {
+void *PopulateNMRelatedOptions(SessionContext *SessionContext) {
   // Adds all Netwok related options in Network List
   // Enable/Disable Wifi
   GetWifiState(SessionContext);
@@ -413,7 +419,7 @@ bool PopulateNMRelatedOptions(SessionContext *SessionContext) {
   // Saved Connections
   AddRenderEntry("Saved Connections", -1, SessionContext, NULL);
 
-  return true;
+  return NULL;
 }
 
 char *Render(char *string) {
@@ -448,7 +454,6 @@ void CreateThreads(SessionContext *SessionContext) {
   pthread_t *threadArray;
   int *args;
 
-  global_ctx->loop = g_main_loop_new(NULL, TRUE);
   // Assign memory dynamically depending on nummber of Entries rendered
   threadArray = malloc(sizeof(pthread_t) * SessionContext->RenderList->length);
 
@@ -490,8 +495,9 @@ SessionContext *InitialiseSession() {
   RenderList = InitRenderList();
 
   SessionContext *SessionContext;
-  SessionContext = malloc(sizeof(SessionContext));
+  SessionContext = malloc(sizeof(*SessionContext));
 
+  SessionContext->RegisteredActions = false;
   SessionContext->client = client;
   SessionContext->RenderList = RenderList;
   SessionContext->RenderString = RenderString;
@@ -508,29 +514,30 @@ int main() {
 
   global_ctx = InitialiseSession();
 
-  bool Networks, Options = false;
   char *string;
   void *args = NULL;
 
   if (global_ctx->client != NULL) {
-    bool Networks = PopulateNetworks(global_ctx);
-
-    bool Options = PopulateNMRelatedOptions(global_ctx);
+    PopulateNetworks(global_ctx);
+    PopulateNMRelatedOptions(global_ctx);
   }
-  if (!(Networks == true && Options == true)) {
-    global_ctx->RenderString->string[global_ctx->RenderString->length++] = '\0';
-    // printf("%s\n", RenderString->string);
-    Input = Render(global_ctx->RenderString->string);
-    CreateThreads(global_ctx);
-  }
+  global_ctx->RenderString->string[global_ctx->RenderString->length++] = '\0';
+  // printf("%s\n", RenderString->string);
+  global_ctx->Input = Render(global_ctx->RenderString->string);
 
-  g_main_loop_run(global_ctx->loop);
+  global_ctx->loop = g_main_loop_new(NULL, TRUE);
+  CreateThreads(global_ctx);
+
+  if (global_ctx->RegisteredActions) {
+    g_main_loop_run(global_ctx->loop);
+    g_main_loop_quit(global_ctx->loop);
+  }
 
   free(global_ctx->RenderString->string);
   free(global_ctx->RenderString);
   free(global_ctx->RenderList->List);
   free(global_ctx->RenderList->callbackArray);
   free(global_ctx->RenderList);
-  free(Input);
+  free(global_ctx->Input);
   return 0;
 }
