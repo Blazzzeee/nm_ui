@@ -34,6 +34,7 @@ typedef struct _RenderList RenderList;
 
 struct _SessionContext {
   NMClient *client;
+  NMDeviceWifi *device;
   RenderString *RenderString;
   RenderList *RenderList;
   GMainLoop *loop;

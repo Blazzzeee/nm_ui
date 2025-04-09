@@ -5,10 +5,37 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
+void *RescanWifi(void *args);
 SessionContext *global_ctx;
 
-// Section Data Structhures
+SessionContext *InitialiseSession() {
+  // Initialise Session Context
+  NMClient *client;
+  client = CreateClient();
+
+  RenderString *RenderString;
+  RenderString = InitRenderString();
+
+  RenderList *RenderList;
+  RenderList = InitRenderList();
+
+  SessionContext *SessionContext;
+  SessionContext = malloc(sizeof(*SessionContext));
+
+  SessionContext->RegisteredActions = false;
+  SessionContext->client = client;
+  SessionContext->RenderList = RenderList;
+  SessionContext->RenderString = RenderString;
+
+  if (!SessionContext) {
+    printf("LOG: Error could not allocate memory to Session Context \n");
+    return NULL;
+  }
+
+  return SessionContext;
+}
 
 // Section Helpers
 
@@ -138,13 +165,6 @@ void *DisableWifi(void *args) {
   return NULL;
 }
 
-void *RescanWifi(void *args) {
-  printf("Rescan async call to IPC \n");
-
-  printf("Rerender on callback \n");
-  return NULL;
-}
-
 void *DeleteConn(void *args) {
   printf("Prompt user about Saved connections \n");
   printf("Delete request to IPC \n");
@@ -229,6 +249,7 @@ void *PopulateNetworks(SessionContext *SessionContext) {
 
         if (deviceType == NM_DEVICE_TYPE_WIFI) {
           // ProcessWifiAP adds networks to Connection List
+          global_ctx->device = (NMDeviceWifi *)device;
           ProcessWifiAP((NMDeviceWifi *)device, SessionContext);
         }
       }
@@ -314,34 +335,7 @@ void CreateThreads(SessionContext *SessionContext) {
   }
 }
 
-SessionContext *InitialiseSession() {
-  // Initialise Session Context
-  NMClient *client;
-  client = CreateClient();
-
-  RenderString *RenderString;
-  RenderString = InitRenderString();
-
-  RenderList *RenderList;
-  RenderList = InitRenderList();
-
-  SessionContext *SessionContext;
-  SessionContext = malloc(sizeof(*SessionContext));
-
-  SessionContext->RegisteredActions = false;
-  SessionContext->client = client;
-  SessionContext->RenderList = RenderList;
-  SessionContext->RenderString = RenderString;
-
-  if (!SessionContext) {
-    printf("LOG: Error could not allocate memory to Session Context \n");
-    return NULL;
-  }
-
-  return SessionContext;
-}
-
-int main() {
+void StartEventLoop() {
 
   global_ctx = InitialiseSession();
 
@@ -363,6 +357,34 @@ int main() {
     g_main_loop_run(global_ctx->loop);
     g_main_loop_quit(global_ctx->loop);
   }
+}
+
+static void RescanCallback(GObject *source_object, GAsyncResult *res,
+                           gpointer data) {
+  // Scan complete
+  g_print("Scanning networks");
+  sleep(2);
+
+  g_print("Scan completed \n");
+  g_print("Rerendering GUI \n");
+  StartEventLoop();
+  Terminate(global_ctx);
+  // Scan failure
+
+  g_main_loop_quit(global_ctx->loop);
+}
+
+void *RescanWifi(void *args) {
+
+  nm_device_wifi_request_scan_async((NMDeviceWifi *)global_ctx->device, NULL,
+                                    RescanCallback, NULL);
+  global_ctx->RegisteredActions = true;
+
+  return NULL;
+}
+
+int main() {
+  StartEventLoop();
   Terminate(global_ctx);
   return 0;
 }
