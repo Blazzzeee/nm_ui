@@ -1,3 +1,4 @@
+#include "glib.h"
 #include "stdbool.h"
 #include "utils.h"
 #include <libnm/NetworkManager.h>
@@ -7,7 +8,6 @@
 #include <string.h>
 #include <unistd.h>
 
-void *RescanWifi(void *args);
 SessionContext *global_ctx;
 
 SessionContext *InitialiseSession() {
@@ -119,6 +119,8 @@ void *ValidateOP(void *args) {
   }
 }
 
+void StartEventLoop();
+
 // Section Callbacks
 
 static void property_set_callback(GObject *object, GAsyncResult *result,
@@ -165,6 +167,40 @@ void *DisableWifi(void *args) {
   return NULL;
 }
 
+static void RescanCallback(GObject *source_object, GAsyncResult *res,
+                           gpointer data) {
+  // TODO Add polling for rescan complete and add timeout
+  g_main_loop_quit(global_ctx->loop);
+  g_print("Scanning networks");
+  sleep(2);
+
+  g_print("Scan completed \n");
+  g_print("Rerendering GUI \n");
+
+  Terminate(global_ctx);
+  StartEventLoop();
+  // Scan failure
+}
+
+void *RescanWifi(void *args) {
+
+  bool WifiEnabled = (bool)nm_client_wireless_get_enabled(global_ctx->client);
+
+  if (WifiEnabled) {
+
+    nm_device_wifi_request_scan_async((NMDeviceWifi *)global_ctx->device, NULL,
+                                      RescanCallback, NULL);
+    global_ctx->RegisteredActions = true;
+    return NULL;
+  }
+
+  else {
+    g_print("Wireless not Enabled on device, Cannot rescan , Enable Wifi "
+            "first\n");
+    return NULL;
+  }
+}
+
 void *DeleteConn(void *args) {
   printf("Prompt user about Saved connections \n");
   printf("Delete request to IPC \n");
@@ -172,6 +208,13 @@ void *DeleteConn(void *args) {
   printf("Notify delete sucessfull \n");
   return NULL;
 }
+
+void *ProcessConnect(void *args) {
+  printf("Connect call to IPC \n");
+  return 0;
+}
+
+// Section runtime
 
 int GetWifiState(SessionContext *SessionContext) {
   // Requests state of Wifi and adds appropriately to Network List
@@ -187,11 +230,6 @@ int GetWifiState(SessionContext *SessionContext) {
     AddRenderEntry(option, -1, SessionContext, &EnableWifi);
     return 0;
   }
-}
-
-void *ProcessConnect(void *args) {
-  printf("Connect call to IPC \n");
-  return 0;
 }
 
 void ProcessWifiAP(NMDeviceWifi *device, SessionContext *SessionContext) {
@@ -216,8 +254,6 @@ void ProcessWifiAP(NMDeviceWifi *device, SessionContext *SessionContext) {
           // Safe copy the ssid into ssid;
           char *ssid = g_strndup(raw_ssid, len);
           // Add the ssid and signal strength to Connection List
-          // AddConnList(ConnList, ssid, strength);
-          // printf("DEBUG: ssid %s\n", ssid);
           AddRenderEntry(ssid, strength, SessionContext, &ProcessConnect);
         }
 
@@ -357,30 +393,6 @@ void StartEventLoop() {
     g_main_loop_run(global_ctx->loop);
     g_main_loop_quit(global_ctx->loop);
   }
-}
-
-static void RescanCallback(GObject *source_object, GAsyncResult *res,
-                           gpointer data) {
-  // Scan complete
-  g_print("Scanning networks");
-  sleep(2);
-
-  g_print("Scan completed \n");
-  g_print("Rerendering GUI \n");
-  StartEventLoop();
-  Terminate(global_ctx);
-  // Scan failure
-
-  g_main_loop_quit(global_ctx->loop);
-}
-
-void *RescanWifi(void *args) {
-
-  nm_device_wifi_request_scan_async((NMDeviceWifi *)global_ctx->device, NULL,
-                                    RescanCallback, NULL);
-  global_ctx->RegisteredActions = true;
-
-  return NULL;
 }
 
 int main() {
