@@ -51,8 +51,8 @@ RenderList *InitRenderList() {
   return renderList;
 }
 
-void AddRenderEntry(char *ssid, int strength, SessionContext *SessionContext,
-                    onValidate callback) {
+void AddRenderEntry(char *ssid, int strength, bool active,
+                    SessionContext *SessionContext, onValidate callback) {
   char strengthBuffer[4];
 
   if (SessionContext->RenderString->length >=
@@ -96,6 +96,23 @@ void AddRenderEntry(char *ssid, int strength, SessionContext *SessionContext,
     SessionContext->RenderList->List[SessionContext->RenderList->length] = ssid;
     SessionContext->RenderList
         ->callbackArray[SessionContext->RenderList->length++] = callback;
+  }
+
+  if (active) {
+    SessionContext->RenderString
+        ->string[SessionContext->RenderString->length++] = '=';
+    SessionContext->RenderString
+        ->string[SessionContext->RenderString->length++] = '=';
+    SessionContext->RenderString
+        ->string[SessionContext->RenderString->length++] = ' ';
+  } else {
+
+    SessionContext->RenderString
+        ->string[SessionContext->RenderString->length++] = ' ';
+    SessionContext->RenderString
+        ->string[SessionContext->RenderString->length++] = ' ';
+    SessionContext->RenderString
+        ->string[SessionContext->RenderString->length++] = ' ';
   }
 
   for (int i = 0; i < strlen(ssid); i++) {

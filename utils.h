@@ -40,14 +40,16 @@ struct _SessionContext {
   GMainLoop *loop;
   bool RegisteredActions;
   char *Input;
+  char *ActiveSsid;
+  int Index;
 };
 
 typedef struct _SessionContext SessionContext;
 
 RenderString *InitRenderString(void);
 RenderList *InitRenderList(void);
-void AddRenderEntry(char *ssid, int strength, SessionContext *SessionContext,
-                    onValidate callback);
+void AddRenderEntry(char *ssid, int strength, bool active,
+                    SessionContext *SessionContext, onValidate callback);
 
 NMClient *CreateClient();
 

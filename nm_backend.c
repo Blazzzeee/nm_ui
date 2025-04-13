@@ -28,6 +28,8 @@ SessionContext *InitialiseSession() {
   SessionContext->client = client;
   SessionContext->RenderList = RenderList;
   SessionContext->RenderString = RenderString;
+  SessionContext->ActiveSsid = NULL;
+  SessionContext->Index = -1;
 
   if (!SessionContext) {
     printf("LOG: Error could not allocate memory to Session Context \n");
@@ -114,9 +116,16 @@ void *ValidateOP(void *args) {
   if (match != NULL) {
     // TODO Create a thread to suspend all the running threads on finding a
     // match
+    global_ctx->Index = i;
     global_ctx->RenderList->callbackArray[i](callbackArgs);
+    g_print("LOG: Identified User Input with index from RenderList\n");
   } else {
   }
+}
+
+void ProcessInput() {
+  char *Input = global_ctx->Input;
+  // TODO remove symbols from input
 }
 
 void StartEventLoop();
@@ -134,7 +143,7 @@ static void property_set_callback(GObject *object, GAsyncResult *result,
     g_printerr("Error setting property: %s\n", error->message);
     g_error_free(error);
   } else {
-    g_print("Successfully set WirelessEnabled property.\n");
+    g_print("Successfully set WirelessEnabled property\n");
   }
   g_main_loop_quit(loop);
 }
@@ -209,9 +218,43 @@ void *DeleteConn(void *args) {
   return NULL;
 }
 
+char *ConvertSsid(GBytes *ssid_bytes) {
+
+  // if the bytes are valid
+  gsize len;
+  // change bytes to data
+  const char *raw_ssid = g_bytes_get_data(ssid_bytes, &len);
+  // Safe copy the ssid into ssid;
+  char *ssid = g_strndup(raw_ssid, len);
+
+  return ssid;
+}
+
+void DisconnectActive() {
+
+  NMAccessPoint *ap =
+      nm_device_wifi_get_active_access_point(global_ctx->device);
+
+  if (true) {
+  }
+}
+
 void *ProcessConnect(void *args) {
-  printf("Connect call to IPC \n");
-  return 0;
+  // Disconnect if connected
+  if (global_ctx->Index != -1) {
+    if (strstr(global_ctx->ActiveSsid,
+               global_ctx->RenderList->List[global_ctx->Index])) {
+
+      g_print("Handle Disconnect to %s", global_ctx->Input);
+    } else {
+      g_print("Handle Connect\n");
+    }
+  } else {
+    g_print("LOG: User input index was not identified\n");
+  }
+
+  // Connect if known network
+  // Prompt password if unknown
 }
 
 // Section runtime
@@ -221,13 +264,13 @@ int GetWifiState(SessionContext *SessionContext) {
   bool WifiState = (bool)nm_client_wireless_get_enabled(SessionContext->client);
   if (WifiState == true) {
     char *option = "Disable Wifi";
-    AddRenderEntry(option, -1, SessionContext, &DisableWifi);
+    AddRenderEntry(option, -1, false, SessionContext, &DisableWifi);
     return 0;
   }
 
   else {
     char *option = "Enable Wifi";
-    AddRenderEntry(option, -1, SessionContext, &EnableWifi);
+    AddRenderEntry(option, -1, false, SessionContext, &EnableWifi);
     return 0;
   }
 }
@@ -235,6 +278,18 @@ int GetWifiState(SessionContext *SessionContext) {
 void ProcessWifiAP(NMDeviceWifi *device, SessionContext *SessionContext) {
   // Request Access Point(networks : connected + available) from the current
   // device
+  NMAccessPoint *active_ap = nm_device_wifi_get_active_access_point(device);
+  if (active_ap) {
+    GBytes *active_ssid_bytes = nm_access_point_get_ssid(active_ap);
+    char *ssid = ConvertSsid(active_ssid_bytes);
+    if (ssid) {
+      g_print("LOG: Active connection was identified\n");
+      global_ctx->ActiveSsid = ssid;
+    }
+  } else {
+    g_print("LOG: Could not determine active connection \n");
+  }
+
   const GPtrArray *APList = nm_device_wifi_get_access_points(device);
   if (APList != NULL) {
     for (guint i = 0; i < APList->len; i++) {
@@ -246,15 +301,16 @@ void ProcessWifiAP(NMDeviceWifi *device, SessionContext *SessionContext) {
         guint strength = nm_access_point_get_strength(AP);
         // request signal strength
         if (ssid_bytes) {
-          // TODO Replace by nm_utils_ssid_to_utf-8
-          // if the bytes are valid
-          gsize len;
-          // change bytes to data
-          const char *raw_ssid = g_bytes_get_data(ssid_bytes, &len);
           // Safe copy the ssid into ssid;
-          char *ssid = g_strndup(raw_ssid, len);
-          // Add the ssid and signal strength to Connection List
-          AddRenderEntry(ssid, strength, SessionContext, &ProcessConnect);
+          char *ssid = ConvertSsid(ssid_bytes);
+          if (strstr(ssid, global_ctx->ActiveSsid)) {
+            // If active connection
+            AddRenderEntry(ssid, strength, true, SessionContext,
+                           &ProcessConnect);
+          } else {
+            AddRenderEntry(ssid, strength, false, SessionContext,
+                           &ProcessConnect);
+          }
         }
 
       } else {
@@ -299,13 +355,13 @@ void *PopulateNMRelatedOptions(SessionContext *SessionContext) {
   // Enable/Disable Wifi
   GetWifiState(SessionContext);
   // Delete a Connection
-  AddRenderEntry("Delete a Connection", -1, SessionContext, &DeleteConn);
+  AddRenderEntry("Delete a Connection", -1, false, SessionContext, &DeleteConn);
   // Rescan Wifi
-  AddRenderEntry("Rescan Wifi", -1, SessionContext, &RescanWifi);
+  AddRenderEntry("Rescan Wifi", -1, false, SessionContext, &RescanWifi);
   // Show Password
-  AddRenderEntry("Show Password", -1, SessionContext, NULL);
+  AddRenderEntry("Show Password", -1, false, SessionContext, NULL);
   // Saved Connections
-  AddRenderEntry("Saved Connections", -1, SessionContext, NULL);
+  AddRenderEntry("Saved Connections", -1, false, SessionContext, NULL);
 
   return NULL;
 }
