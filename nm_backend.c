@@ -2,7 +2,6 @@
 #include "stdbool.h"
 #include "utils.h"
 #include <libnm/NetworkManager.h>
-#include <libnm/nm-core-types.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +12,9 @@ SessionContext *global_ctx;
 
 SessionContext *InitialiseSession() {
   // Initialise Session Context
+  // The function is used to create Global Context that will be used for the
+  // current render NOTE this must be followed by TerminateSession or it will
+  // cause memory leak
   NMClient *client;
   client = CreateClient();
 
@@ -43,7 +45,8 @@ SessionContext *InitialiseSession() {
 // Section Helpers
 
 char *CreateProcess(char *Rawcommand, char *args) {
-  // Run shell command and return its output as a string pointer
+  // Run shell command and accept arguments and return its output as a string
+  // pointer
   FILE *fp;
   char ch;
   int size = INITIAL_SIZE;
@@ -106,11 +109,10 @@ char *CreateProcess(char *Rawcommand, char *args) {
 }
 
 void *ValidateOP(void *args) {
-  // Output is the output buffer returned by running subprocess
-  // Expected is the Expected output of that command
-  // The function returns whether the 'output' is similar to 'expected' or not
-
-  // current approach string handling function
+  // The function determines whether the RenderList entry matches the user input
+  // On identifying user input , invoke its registered callback
+  // This function also has responsibility to map the Index of RenderList and
+  // update it in global context
   void *callbackArgs;
   int i = *(int *)args;
   char *match = strstr(global_ctx->Input, global_ctx->RenderList->List[i]);
@@ -124,19 +126,15 @@ void *ValidateOP(void *args) {
   }
 }
 
-void ProcessInput() {
-  char *Input = global_ctx->Input;
-  // TODO remove symbols from input
-}
-
 void StartEventLoop();
 
 // Section Callbacks
 
 static void property_set_callback(GObject *object, GAsyncResult *result,
                                   gpointer user_data) {
-  // Called by nm_client_dbus_set_property after the GMainLoop is run
-  // the GMainLoop processes all the async callbacks that were registered
+  // Called by nm_client_dbus_set_property and
+  // nm_client_deactivate_connection_async after the GMainLoop is run the
+  // GMainLoop processes all the async callbacks that were registered
   GMainLoop *loop = (GMainLoop *)user_data;
   GError *error = NULL;
   nm_client_dbus_set_property_finish(NM_CLIENT(object), result, &error);
@@ -167,6 +165,7 @@ void *EnableWifi(void *args) {
 
 void *DisableWifi(void *args) {
 
+  // Callback called by on Validating input for Disable Wifi
   GVariant *val = g_variant_new_boolean(FALSE);
   nm_client_dbus_set_property(global_ctx->client, NM_DBUS_PATH,
                               NM_DBUS_INTERFACE, "WirelessEnabled", val, -1,
@@ -179,6 +178,8 @@ void *DisableWifi(void *args) {
 
 static void RescanCallback(GObject *source_object, GAsyncResult *res,
                            gpointer data) {
+  // This function is used as the actual callback to perform Rescan event
+
   // TODO Add polling for rescan complete and add timeout
   g_main_loop_quit(global_ctx->loop);
   g_print("Scanning networks");
@@ -193,7 +194,8 @@ static void RescanCallback(GObject *source_object, GAsyncResult *res,
 }
 
 void *RescanWifi(void *args) {
-
+  // This function follow OnValidate Generic and is called by identifying user
+  // Input linked to Rescan wifi
   bool WifiEnabled = (bool)nm_client_wireless_get_enabled(global_ctx->client);
 
   if (WifiEnabled) {
@@ -212,6 +214,7 @@ void *RescanWifi(void *args) {
 }
 
 void *DeleteConn(void *args) {
+  // TODO To be implemented
   printf("Prompt user about Saved connections \n");
   printf("Delete request to IPC \n");
 
@@ -220,7 +223,7 @@ void *DeleteConn(void *args) {
 }
 
 char *ConvertSsid(GBytes *ssid_bytes) {
-
+  // Helper used to convert bytes to string
   // if the bytes are valid
   gsize len;
   // change bytes to data
@@ -232,8 +235,8 @@ char *ConvertSsid(GBytes *ssid_bytes) {
 }
 
 void HandleDisconnect() {
-
-  // Request active conns using nm_client_get_active
+  // This function is callback used on identifying user giving Disconnect
+  // request
 
   const GPtrArray *activeList =
       nm_client_get_active_connections(global_ctx->client);
@@ -245,32 +248,32 @@ void HandleDisconnect() {
   for (guint i = 0; i < activeList->len; i++) {
     // Iterate over GPtrArray , request APs for wifi device
     NMActiveConnection *device = g_ptr_array_index(activeList, i);
-
+    // Fetch all active connections to get NMActiveConnection object
     const char *ssid = nm_active_connection_get_id(device);
 
     if (strstr(ssid, global_ctx->ActiveSsid)) {
-      // gboolean result = nm_client_deactivate_connection(global_ctx->client,
-      // device, NULL, NULL);
-
-      global_ctx->RegisteredActions = true;
+      // Register GMainLoop callback
       nm_client_deactivate_connection_async(global_ctx->client, device, NULL,
                                             property_set_callback,
                                             global_ctx->loop);
-      g_main_loop_quit(global_ctx->loop);
+      global_ctx->RegisteredActions = true;
     }
   }
 }
 
 void *ProcessConnect(void *args) {
-  // Disconnect if connected
+  // This is a generic callback that processes Wifi connection and disconnection
+  // requests The function is registered while adding entries to RenderList
   if (global_ctx->Index != -1) {
-    if (strstr(global_ctx->ActiveSsid,
-               global_ctx->RenderList->List[global_ctx->Index])) {
 
+    if (global_ctx->ActiveSsid != NULL &&
+        strstr(global_ctx->ActiveSsid,
+               global_ctx->RenderList->List[global_ctx->Index])) {
       g_print("Handle Disconnect to %s", global_ctx->Input);
       HandleDisconnect();
     } else {
       g_print("Handle Connect\n");
+      return NULL;
     }
   } else {
     g_print("LOG: User input index was not identified\n");
@@ -406,7 +409,6 @@ char *Render(char *string) {
   strcat(command, string);
   strcat(command, "'");
   // Capture output of the process by allocating buffer using CreateBuffer
-  // TODO Trim symbols from user input
   char *buffer = CreateProcess(
       command, "| rofi -dmenu -theme ~/.config/rofi/wifi/config.rasi");
   printf("%s\n", buffer);
@@ -417,6 +419,9 @@ char *Render(char *string) {
 }
 
 void CreateThreads(SessionContext *SessionContext) {
+  // This function is ued to Create wokrer threads that perform simultanteous
+  // string Validation to determine user input
+  // this function must also suspend these worker threads
 
   // Initialise Thread array
   pthread_t *threadArray;
@@ -443,7 +448,7 @@ void CreateThreads(SessionContext *SessionContext) {
                    (void *)args + (i * sizeof(int)));
   }
   // Wait for threads to finish
-
+  // TODO replace with thread suspend
   for (int i = 0; i < SessionContext->RenderList->length; i++) {
     *args = i + 1;
     pthread_join(threadArray[i], NULL);
@@ -452,7 +457,7 @@ void CreateThreads(SessionContext *SessionContext) {
 }
 
 void StartEventLoop() {
-
+  // The actual event loop that performs all the actions
   global_ctx = InitialiseSession();
 
   char *string;
