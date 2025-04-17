@@ -105,6 +105,7 @@ void AddRenderEntry(char *ssid, int strength, bool active,
         ->string[SessionContext->RenderString->length++] = '=';
     SessionContext->RenderString
         ->string[SessionContext->RenderString->length++] = ' ';
+
   } else {
 
     SessionContext->RenderString

@@ -2,6 +2,7 @@
 #include "stdbool.h"
 #include "utils.h"
 #include <libnm/NetworkManager.h>
+#include <libnm/nm-core-types.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -140,10 +141,10 @@ static void property_set_callback(GObject *object, GAsyncResult *result,
   GError *error = NULL;
   nm_client_dbus_set_property_finish(NM_CLIENT(object), result, &error);
   if (error) {
-    g_printerr("Error setting property: %s\n", error->message);
+    g_printerr("lOG: Error setting property: %s\n", error->message);
     g_error_free(error);
   } else {
-    g_print("Successfully set WirelessEnabled property\n");
+    g_print("LOG: Successfully set property\n");
   }
   g_main_loop_quit(loop);
 }
@@ -230,12 +231,33 @@ char *ConvertSsid(GBytes *ssid_bytes) {
   return ssid;
 }
 
-void DisconnectActive() {
+void HandleDisconnect() {
 
-  NMAccessPoint *ap =
-      nm_device_wifi_get_active_access_point(global_ctx->device);
+  // Request active conns using nm_client_get_active
 
-  if (true) {
+  const GPtrArray *activeList =
+      nm_client_get_active_connections(global_ctx->client);
+
+  if (!activeList) {
+    g_print("LOG: Could not request active connection list\n");
+  }
+
+  for (guint i = 0; i < activeList->len; i++) {
+    // Iterate over GPtrArray , request APs for wifi device
+    NMActiveConnection *device = g_ptr_array_index(activeList, i);
+
+    const char *ssid = nm_active_connection_get_id(device);
+
+    if (strstr(ssid, global_ctx->ActiveSsid)) {
+      // gboolean result = nm_client_deactivate_connection(global_ctx->client,
+      // device, NULL, NULL);
+
+      global_ctx->RegisteredActions = true;
+      nm_client_deactivate_connection_async(global_ctx->client, device, NULL,
+                                            property_set_callback,
+                                            global_ctx->loop);
+      g_main_loop_quit(global_ctx->loop);
+    }
   }
 }
 
@@ -246,6 +268,7 @@ void *ProcessConnect(void *args) {
                global_ctx->RenderList->List[global_ctx->Index])) {
 
       g_print("Handle Disconnect to %s", global_ctx->Input);
+      HandleDisconnect();
     } else {
       g_print("Handle Connect\n");
     }
@@ -301,13 +324,16 @@ void ProcessWifiAP(NMDeviceWifi *device, SessionContext *SessionContext) {
         guint strength = nm_access_point_get_strength(AP);
         // request signal strength
         if (ssid_bytes) {
-          // Safe copy the ssid into ssid;
           char *ssid = ConvertSsid(ssid_bytes);
+
+          // TODO fix does not wprk for entries having same ssid
           if (strstr(ssid, global_ctx->ActiveSsid)) {
             // If active connection
             AddRenderEntry(ssid, strength, true, SessionContext,
                            &ProcessConnect);
+
           } else {
+            // Non active connections
             AddRenderEntry(ssid, strength, false, SessionContext,
                            &ProcessConnect);
           }
@@ -330,7 +356,7 @@ void *PopulateNetworks(SessionContext *SessionContext) {
   const GPtrArray *devices = nm_client_get_devices(SessionContext->client);
 
   if (devices == NULL) {
-    printf("Erorr requesting devices from client \n");
+    g_print("LOG: Erorr requesting devices from client \n");
     return NULL;
   } else {
     for (guint i = 0; i < devices->len; i++) {
