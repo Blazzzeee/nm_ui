@@ -317,17 +317,15 @@ void ProcessWifiAP(NMDeviceWifi *device, SessionContext *SessionContext) {
   if (APList != NULL) {
     for (guint i = 0; i < APList->len; i++) {
       // Iterate over the Access Point List
-      NMAccessPoint *AP = (NMAccessPoint *)g_ptr_array_index(APList, i);
-      if (AP != NULL) {
-        GBytes *ssid_bytes = nm_access_point_get_ssid(AP);
+      NMAccessPoint *ap = (NMAccessPoint *)g_ptr_array_index(APList, i);
+      if (ap != NULL) {
+        GBytes *ssid_bytes = nm_access_point_get_ssid(ap);
         // ssid is stored as raw_bytes
-        guint strength = nm_access_point_get_strength(AP);
+        guint strength = nm_access_point_get_strength(ap);
         // request signal strength
         if (ssid_bytes) {
           char *ssid = ConvertSsid(ssid_bytes);
-
-          // TODO fix does not wprk for entries having same ssid
-          if (strstr(ssid, global_ctx->ActiveSsid)) {
+          if (active_ap == ap) {
             // If active connection
             AddRenderEntry(ssid, strength, true, SessionContext,
                            &ProcessConnect);
