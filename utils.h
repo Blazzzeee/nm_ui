@@ -11,7 +11,7 @@
 #define SIZE_MAX 4096
 
 #define RENDER_LIST_SIZE 512
-#define MAX_ENTRIES 50
+#define MAX_ENTRIES 100
 
 typedef void *(*onValidate)(void *);
 

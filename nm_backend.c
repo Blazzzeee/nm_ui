@@ -2,6 +2,7 @@
 #include "stdbool.h"
 #include "utils.h"
 #include <libnm/NetworkManager.h>
+#include <libnm/nm-core-types.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -251,7 +252,7 @@ void HandleDisconnect() {
     // Fetch all active connections to get NMActiveConnection object
     const char *ssid = nm_active_connection_get_id(device);
 
-    if (strstr(ssid, global_ctx->ActiveSsid)) {
+    if (strcmp(ssid, global_ctx->ActiveSsid) == 0) {
       // Register GMainLoop callback
       nm_client_deactivate_connection_async(global_ctx->client, device, NULL,
                                             property_set_callback,
@@ -261,9 +262,36 @@ void HandleDisconnect() {
   }
 }
 
+void HandleConnect() {
+  // Get connections and check if known
+  const char *ssid = global_ctx->RenderList->List[global_ctx->Index];
+  const GPtrArray *conns = nm_client_get_connections(global_ctx->client);
+  if (!conns) {
+    g_print("Could not fetch active connections\n");
+  }
+
+  for (guint i = 0; i < conns->len; i++) {
+    // Iterate over GPtrArray , request APs for wifi device
+    NMConnection *conn = g_ptr_array_index(conns, i);
+    const char *id = nm_connection_get_id(conn);
+    if (conn != NULL) {
+      if (strcmp(id, ssid) == 0) {
+        g_print("Found matching connection %s\n", ssid);
+        // TODO do a NMClient connect
+        nm_client_activate_connection_async(
+            global_ctx->client, conn, (NMDevice *)global_ctx->device, NULL,
+            NULL, property_set_callback, global_ctx->loop);
+        global_ctx->RegisteredActions = true;
+      }
+    }
+  }
+  g_print("No connection was found");
+}
+
 void *ProcessConnect(void *args) {
-  // This is a generic callback that processes Wifi connection and disconnection
-  // requests The function is registered while adding entries to RenderList
+  // This is a generic callback that processes Wifi connection and
+  // disconnection requests The function is registered while adding entries
+  // to RenderList
   if (global_ctx->Index != -1) {
 
     if (global_ctx->ActiveSsid != NULL &&
@@ -272,7 +300,7 @@ void *ProcessConnect(void *args) {
       g_print("Handle Disconnect to %s", global_ctx->Input);
       HandleDisconnect();
     } else {
-      g_print("Handle Connect\n");
+      HandleConnect();
       return NULL;
     }
   } else {
@@ -419,9 +447,9 @@ char *Render(char *string) {
 }
 
 void CreateThreads(SessionContext *SessionContext) {
-  // This function is ued to Create wokrer threads that perform simultanteous
-  // string Validation to determine user input
-  // this function must also suspend these worker threads
+  // This function is ued to Create wokrer threads that perform
+  // simultanteous string Validation to determine user input this function
+  // must also suspend these worker threads
 
   // Initialise Thread array
   pthread_t *threadArray;
