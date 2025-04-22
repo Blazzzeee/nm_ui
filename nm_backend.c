@@ -34,6 +34,7 @@ SessionContext *InitialiseSession() {
   SessionContext->RenderString = RenderString;
   SessionContext->ActiveSsid = NULL;
   SessionContext->Index = -1;
+  SessionContext->Input = NULL;
 
   if (!SessionContext) {
     printf("LOG: Error could not allocate memory to Session Context \n");
@@ -285,7 +286,7 @@ void HandleConnect() {
       }
     }
   }
-  g_print("No connection was found");
+  g_print("No connection was found \n");
 }
 
 void *ProcessConnect(void *args) {
@@ -421,29 +422,44 @@ void *PopulateNMRelatedOptions(SessionContext *SessionContext) {
   return NULL;
 }
 
-char *Render(char *string) {
-  // Construct the render command to render GUI
-  int i = strlen(string);
-  int j = strlen("echo ''");
-  char *command;
-  printf("LOG: Memory allocated for bytes %d \n", (int)(i + j + 1));
-  command = malloc((i + j + 1) * sizeof(char));
-  if (command == NULL) {
-    printf("Memory allocation failed \n");
-    return NULL;
-  }
-  command[0] = '\0';
-  strcpy(command, "echo '");
-  strcat(command, string);
-  strcat(command, "'");
-  // Capture output of the process by allocating buffer using CreateBuffer
-  char *buffer = CreateProcess(
-      command, "| rofi -dmenu -theme ~/.config/rofi/wifi/config.rasi");
-  printf("%s\n", buffer);
-  free(command);
+void CreateRenderString(SessionContext *global_ctx) {
 
-  // Remember to free output buffer
-  return buffer;
+  char *command = "echo \"";
+
+  for (int i = 0; command[i] != '\0'; i++) {
+    if (global_ctx->RenderString->length < global_ctx->RenderString->size) {
+      global_ctx->RenderString->string[global_ctx->RenderString->length++] =
+          command[i];
+    } else {
+      g_print("LOG: RenderList Overflow \n");
+      return;
+    }
+  }
+}
+
+void TerminateRenderString(SessionContext *global_ctx) {
+
+  if (global_ctx->RenderString->length < global_ctx->RenderString->size) {
+    global_ctx->RenderString->string[global_ctx->RenderString->length++] = '\"';
+  } else {
+    g_print("LOG: RenderList Overflow \n");
+    return;
+  }
+
+  global_ctx->RenderString->string[global_ctx->RenderString->length++] = '\0';
+
+  // g_print("Created RenderCommand %s\n", global_ctx->RenderString->string);
+
+  char *buffer =
+      CreateProcess(global_ctx->RenderString->string,
+                    "| rofi -dmenu -theme ~/.config/rofi/wifi/config.rasi");
+
+  if (!buffer) {
+    g_print("LOG: Process Buffer could not be allocated \n");
+    return;
+  }
+
+  global_ctx->Input = buffer;
 }
 
 void CreateThreads(SessionContext *SessionContext) {
@@ -474,13 +490,14 @@ void CreateThreads(SessionContext *SessionContext) {
     args[i] = i;
     pthread_create(&threadArray[i], NULL, ValidateOP,
                    (void *)args + (i * sizeof(int)));
+    g_print("LOG: Thread %d Created\n", i);
   }
   // Wait for threads to finish
   // TODO replace with thread suspend
   for (int i = 0; i < SessionContext->RenderList->length; i++) {
     *args = i + 1;
     pthread_join(threadArray[i], NULL);
-    printf("Joined Thread: %d\n", *args);
+    printf("Terminated Thread: %d\n", *args);
   }
 }
 
@@ -492,13 +509,11 @@ void StartEventLoop() {
   void *args = NULL;
 
   if (global_ctx->client != NULL) {
+    CreateRenderString(global_ctx);
     PopulateNetworks(global_ctx);
     PopulateNMRelatedOptions(global_ctx);
+    TerminateRenderString(global_ctx);
   }
-  global_ctx->RenderString->string[global_ctx->RenderString->length++] = '\0';
-  // printf("%s\n", RenderString->string);
-  global_ctx->Input = Render(global_ctx->RenderString->string);
-
   global_ctx->loop = g_main_loop_new(NULL, TRUE);
   CreateThreads(global_ctx);
 
