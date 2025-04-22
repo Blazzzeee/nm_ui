@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "glib.h"
 #include <libnm/NetworkManager.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -156,10 +157,14 @@ NMClient *CreateClient() {
 
 void Terminate(SessionContext *global_ctx) {
 
+  g_print("LOG: Closing IPC Connection \n");
+  g_print("LOG: Deallocating memory...\n");
   free(global_ctx->RenderString->string);
   free(global_ctx->RenderString);
   free(global_ctx->RenderList->List);
   free(global_ctx->RenderList->callbackArray);
   free(global_ctx->RenderList);
   free(global_ctx->Input);
+  g_print("LOG: Memory was Deallocated Successfully\n");
+  g_print("LOG: Closing GUI\n");
 }
