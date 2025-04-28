@@ -126,10 +126,25 @@ void AddRenderEntry(char *ssid, int strength, bool active,
       ' ';
 
   if (strength != -1) {
-    snprintf(strengthBuffer, 4, "%d", strength);
-    for (int i = 0; i < 3 && strengthBuffer[i] != '\0'; i++) {
+    // clamp 0–100
+    if (strength < 0)
+      strength = 0;
+    if (strength > 100)
+      strength = 100;
+
+    // pick one of 5 glyphs by strength %
+    // 0–24 → 0 bars, 25–49 → 1 bar, 50–74 → 2 bars, 75–99 → 3 bars, 100 → 4
+    // bars
+    const char *glyph = (strength < 25)    ? "󰤯"
+                        : (strength < 50)  ? "󰤟"
+                        : (strength < 75)  ? "󰤢"
+                        : (strength < 100) ? "󰤥"
+                                           : "󰤨";
+
+    // append the UTF-8 bytes of that glyph into your render‐string
+    for (const char *p = glyph; *p != '\0'; ++p) {
       SessionContext->RenderString
-          ->string[SessionContext->RenderString->length++] = strengthBuffer[i];
+          ->string[SessionContext->RenderString->length++] = *p;
     }
   }
 

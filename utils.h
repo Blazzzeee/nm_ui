@@ -42,6 +42,7 @@ struct _SessionContext {
   char *Input;
   char *ActiveSsid;
   int Index;
+  bool PerformedActions;
 };
 
 typedef struct _SessionContext SessionContext;

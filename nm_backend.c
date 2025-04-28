@@ -35,6 +35,7 @@ SessionContext *InitialiseSession() {
   SessionContext->ActiveSsid = NULL;
   SessionContext->Index = -1;
   SessionContext->Input = NULL;
+  SessionContext->PerformedActions = false;
 
   if (!SessionContext) {
     printf("LOG: Error could not allocate memory to Session Context \n");
@@ -54,6 +55,11 @@ char *CreateProcess(char *Rawcommand, char *args) {
   int size = INITIAL_SIZE;
   // Remember to free buffer pointer
   char *buffer = malloc(INITIAL_SIZE);
+  if (buffer == NULL) {
+    printf("Buffer memory allocation failed\n");
+    return NULL;
+  }
+
   int i = 0;
 
   // Create command along with adding args
@@ -61,50 +67,55 @@ char *CreateProcess(char *Rawcommand, char *args) {
   size_t k = strlen(args);
   char *command = malloc(j + k + 2);
   if (command == NULL) {
-    printf("Command string memory allocation failed \n");
+    printf("Command string memory allocation failed\n");
     free(buffer);
     return NULL;
   }
+
   strcpy(command, Rawcommand);
+  strcat(command, " "); // Add space between command and arguments
   strcat(command, args);
 
   fp = popen(command, "r");
-
   if (fp == NULL) {
-    // Replace with exception handling
-    printf("DEBUG: Operation failed \n");
+    printf("DEBUG: Operation failed\n");
+    free(buffer);
+    free(command);
+    return NULL;
   }
 
-  else {
-    while ((ch = fgetc(fp)) != EOF) {
-      if (i < size - 1) {
-        buffer[i++] = ch;
+  while ((ch = fgetc(fp)) != EOF) {
+    if (i < size - 1) {
+      buffer[i++] = ch;
+    } else {
+      // Check if doubling would overflow
+      if (size > SIZE_MAX / 2) {
+        printf("DEBUG: Cannot safely double buffer size\n");
+        break;
       }
 
-      else {
-        size = size * 2;
-        if (size <= SIZE_MAX) {
-          char *temp = realloc(buffer, size);
-          if (temp != NULL) {
-            // safely exteneded size
-            buffer = temp;
-            buffer[i++] = ch;
-          } else {
-            // Handle realloc error
-            printf("DEBUG: Error extending size\n");
-            return buffer;
-          }
-        } else {
-          // Loop termination to avoid stackoverflow
-          printf("DEBUG: MAX Buffer limit reached , current size: %d , "
-                 "max_size: %d \n",
-                 size, SIZE_MAX);
-          break;
-        }
+      size = size * 2;
+      char *temp = realloc(buffer, size);
+      if (temp != NULL) {
+        // Safely extended size
+        buffer = temp;
+        buffer[i++] = ch;
+      } else {
+        // Handle realloc error - the original buffer is no longer valid
+        printf("DEBUG: Error extending size\n");
+        free(buffer); // This might be risky but necessary
+        buffer = NULL;
+        free(command);
+        pclose(fp);
+        return NULL;
       }
     }
+  }
+
+  if (buffer != NULL) {
     buffer[i] = '\0';
   }
+
   pclose(fp);
   free(command);
   return buffer;
@@ -263,12 +274,46 @@ void HandleDisconnect() {
   }
 }
 
+NMConnection *CreateWifiConnection(const char *ssid, const char *password) {
+  NMConnection *conn;
+  NMSettingWireless *s_wifi;
+  NMSettingWirelessSecurity *s_wsec;
+  GBytes *ssid_bytes;
+
+  conn = nm_simple_connection_new();
+
+  if (!conn) {
+    g_print("LOG: Could not create new connection object");
+    return NULL;
+  }
+
+  s_wifi = (NMSettingWireless *)nm_setting_wireless_new();
+
+  ssid_bytes = g_bytes_new(ssid, strlen(ssid));
+  if (!ssid_bytes) {
+    g_print("LOG: Could not allocate ssid bytes\n");
+    return NULL;
+  }
+  g_object_set(G_OBJECT(s_wifi), NM_SETTING_WIRELESS_SSID, ssid_bytes, NULL);
+  g_bytes_unref(ssid_bytes);
+
+  nm_connection_add_setting(conn, NM_SETTING(s_wifi));
+
+  s_wsec = (NMSettingWirelessSecurity *)nm_setting_wireless_security_new();
+  g_object_set(G_OBJECT(s_wsec), NM_SETTING_WIRELESS_SECURITY_KEY_MGMT,
+               "wpa-psk", NM_SETTING_WIRELESS_SECURITY_PSK, password, NULL);
+
+  nm_connection_add_setting(conn, NM_SETTING(s_wsec));
+
+  return conn;
+}
+
 void HandleConnect() {
   // Get connections and check if known
   const char *ssid = global_ctx->RenderList->List[global_ctx->Index];
   const GPtrArray *conns = nm_client_get_connections(global_ctx->client);
   if (!conns) {
-    g_print("Could not fetch active connections\n");
+    g_print("Could not fetch connections\n");
   }
 
   for (guint i = 0; i < conns->len; i++) {
@@ -283,10 +328,56 @@ void HandleConnect() {
             global_ctx->client, conn, (NMDevice *)global_ctx->device, NULL,
             NULL, property_set_callback, global_ctx->loop);
         global_ctx->RegisteredActions = true;
+        g_print("LOG: Connected to %s", ssid);
+        return;
+        // Incase matching connection was found retrun
       }
     }
   }
-  g_print("No connection was found \n");
+
+  if (global_ctx->PerformedActions) {
+    g_print("Field has already been added skipping");
+    return;
+  }
+
+  global_ctx->PerformedActions = true;
+
+  // Only if connection is new / unknown
+  // Capture password in pass buffer
+  char *buffer = CreateProcess(
+      "rofi -dmenu -password -theme ~/.config/rofi/wifi/config.rasi", " ");
+  if (!buffer) {
+    g_print("LOG: Could not input password\n");
+    return;
+  }
+
+  // Allocate memory for pass
+  char *pass = malloc(strlen(buffer) + 1);
+  if (!pass) {
+    g_print("LOG: Failed to allocate memory for password\n");
+    free(buffer); // free buffer if it was allocated
+    return;
+  }
+
+  // Copy buffer to pass but remove the trailing newline
+  int len = strlen(buffer);
+  if (len > 0 && buffer[len - 1] == '\n') {
+    buffer[len - 1] = '\0';
+  }
+
+  strcpy(pass, buffer);
+
+  free(buffer);
+
+  NMConnection *partial = CreateWifiConnection(ssid, pass);
+
+  nm_client_add_and_activate_connection_async(
+      global_ctx->client, partial, (NMDevice *)global_ctx->device, NULL, NULL,
+      property_set_callback, global_ctx->loop);
+  global_ctx->RegisteredActions = true;
+  g_print("LOG: Added new connection\n");
+  free(pass);
+  return;
 }
 
 void *ProcessConnect(void *args) {
@@ -475,13 +566,13 @@ void CreateThreads(SessionContext *SessionContext) {
   threadArray = malloc(sizeof(pthread_t) * SessionContext->RenderList->length);
 
   if (!threadArray) {
-    printf("LOG: Level: Critical Error could not allocate pthread Array \n");
+    g_print("LOG: Level: Critical Error could not allocate pthread Array \n");
     return;
   }
 
   args = malloc(sizeof(int) * SessionContext->RenderList->length);
   if (!args) {
-    printf("LOG: Critical Could not allocate memory to args Array \n");
+    g_print("LOG: Critical Could not allocate memory to args Array \n");
     return;
   }
 
@@ -497,7 +588,7 @@ void CreateThreads(SessionContext *SessionContext) {
   for (int i = 0; i < SessionContext->RenderList->length; i++) {
     *args = i + 1;
     pthread_join(threadArray[i], NULL);
-    printf("Terminated Thread: %d\n", *args);
+    g_print("LOG: Terminated Thread: %d\n", *args);
   }
 }
 
