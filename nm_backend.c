@@ -1,14 +1,15 @@
-#include "glib.h"
 #include "stdbool.h"
 #include "utils.h"
 #include <libnm/NetworkManager.h>
-#include <libnm/nm-core-types.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
+#define RENDER_COMMAND "rofi -dmenu -theme ~/.config/rofi/wifi/config.rasi"
+#define NOTIFY_COMMAND "notify-send -t 2000 \"\""
 SessionContext *global_ctx;
 
 SessionContext *InitialiseSession() {
@@ -139,6 +140,12 @@ void *ValidateOP(void *args) {
   }
 }
 
+void NotifyGeneric(char *message) {
+  char *buffer = CreateProcess(NOTIFY_COMMAND, message);
+
+  free(buffer);
+}
+
 void StartEventLoop();
 
 // Section Callbacks
@@ -173,6 +180,7 @@ void *EnableWifi(void *args) {
                               NULL, property_set_callback, global_ctx->loop);
   global_ctx->RegisteredActions = true;
   printf("Enable Wifi Call to IPC\n");
+  NotifyGeneric("'Enabled Wifi'");
   return NULL;
 }
 
@@ -186,6 +194,7 @@ void *DisableWifi(void *args) {
   printf("Disable Wifi Call to IPC\n");
 
   global_ctx->RegisteredActions = true;
+  NotifyGeneric("'Disabled Wifi'");
   return NULL;
 }
 
@@ -275,6 +284,8 @@ void HandleDisconnect() {
 }
 
 NMConnection *CreateWifiConnection(const char *ssid, const char *password) {
+  // This function is used to create a partial NMConnection that will be used
+  // for adding a new connectiony
   NMConnection *conn;
   NMSettingWireless *s_wifi;
   NMSettingWirelessSecurity *s_wsec;
@@ -323,7 +334,6 @@ void HandleConnect() {
     if (conn != NULL) {
       if (strcmp(id, ssid) == 0) {
         g_print("Found matching connection %s\n", ssid);
-        // TODO do a NMClient connect
         nm_client_activate_connection_async(
             global_ctx->client, conn, (NMDevice *)global_ctx->device, NULL,
             NULL, property_set_callback, global_ctx->loop);
@@ -344,8 +354,7 @@ void HandleConnect() {
 
   // Only if connection is new / unknown
   // Capture password in pass buffer
-  char *buffer = CreateProcess(
-      "rofi -dmenu -password -theme ~/.config/rofi/wifi/config.rasi", " ");
+  char *buffer = CreateProcess(RENDER_COMMAND, " -password");
   if (!buffer) {
     g_print("LOG: Could not input password\n");
     return;
@@ -380,7 +389,7 @@ void HandleConnect() {
   return;
 }
 
-void *ProcessConnect(void *args) {
+void *ProcessConnectDisConnect(void *args) {
   // This is a generic callback that processes Wifi connection and
   // disconnection requests The function is registered while adding entries
   // to RenderList
@@ -451,12 +460,12 @@ void ProcessWifiAP(NMDeviceWifi *device, SessionContext *SessionContext) {
           if (active_ap == ap) {
             // If active connection
             AddRenderEntry(ssid, strength, true, SessionContext,
-                           &ProcessConnect);
+                           &ProcessConnectDisConnect);
 
           } else {
             // Non active connections
             AddRenderEntry(ssid, strength, false, SessionContext,
-                           &ProcessConnect);
+                           &ProcessConnectDisConnect);
           }
         }
 
@@ -542,8 +551,7 @@ void TerminateRenderString(SessionContext *global_ctx) {
   // g_print("Created RenderCommand %s\n", global_ctx->RenderString->string);
 
   char *buffer =
-      CreateProcess(global_ctx->RenderString->string,
-                    "| rofi -dmenu -theme ~/.config/rofi/wifi/config.rasi");
+      CreateProcess(global_ctx->RenderString->string, "| " RENDER_COMMAND);
 
   if (!buffer) {
     g_print("LOG: Process Buffer could not be allocated \n");
@@ -584,7 +592,6 @@ void CreateThreads(SessionContext *SessionContext) {
     g_print("LOG: Thread %d Created\n", i);
   }
   // Wait for threads to finish
-  // TODO replace with thread suspend
   for (int i = 0; i < SessionContext->RenderList->length; i++) {
     *args = i + 1;
     pthread_join(threadArray[i], NULL);
@@ -615,7 +622,19 @@ void StartEventLoop() {
 }
 
 int main() {
+  clock_t start_time, end_time;
+
+  start_time = clock();
+
   StartEventLoop();
+
   Terminate(global_ctx);
+
+  end_time = clock();
+
+  double elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+
+  printf("Elapsed time: %f seconds\n", elapsed_time);
+
   return 0;
 }

@@ -56,4 +56,6 @@ NMClient *CreateClient();
 
 void Terminate(SessionContext *global_ctx);
 
+void NotifyGeneric(char *message);
+
 #endif
