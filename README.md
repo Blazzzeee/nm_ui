@@ -6,3 +6,8 @@
  Mean [ms] | Min [ms] | Max [ms] | Relative |</br>
 | 11.3 ± 1.0 | 9.7 | 14.7 | 1.00 |
 
+### Python3 (with render overhead)</br>
+
+### C (With render overhead)</br>
+#### Using inbuilt timing methods
+Elapsed time: 0.011355 seconds
