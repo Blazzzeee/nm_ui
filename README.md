@@ -24,6 +24,8 @@ print("Main finished")
 profiler.print_stats()
 print(f"Elapsed time: {end - start:.6f} seconds")
 ```
+#### Assets
+![python](./assets/python.png)
 ### C (With Render Overhead)
 #### Using inbuilt timing methods  
 **Elapsed time:** `0.007561` seconds
