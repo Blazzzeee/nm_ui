@@ -62,10 +62,16 @@ int main() {
 ![c](./assets/c.png)
 </br> </br>
 
-## Usage
+## About
 
-The project is beta backend to [!(network_manager_ui)[https://github.com/Blazzzeee/network_manager_ui]](https://github.com/Blazzzeee/network_manager_ui) written in C , to achieve blazing fast speed and has overall better design philosophy as well as system design from the previous version , and avoids a lot of annoying bugs in the previous version
+The project is beta backend to ![network_manager_ui](https://github.com/Blazzzeee/network_manager_ui)written in C , to achieve blazing fast speed and has overall better design philosophy as well as system design from the previous version , and avoids a lot of annoying bugs in the previous version
 
+## Installation
 Install network_manager_ui as stated in the original repo, and use make after cloning this repo
-
 Dependencies :- make, Network_manager_ui, pkg-config, libnm(shipped with NetworkMangeer on arch) or use libnm-dev in debian /fedora
+
+## Usage
+Move the nm binary to the your folder of your choice and run with
+```bash
+./nm
+```
