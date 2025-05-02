@@ -8,7 +8,7 @@
 
 ### Python3 (With Render Overhead)
 #### Using inbuilt timing methods  
-**Elapsed time:** `1.487729` seconds  
+**Elapsed time:** `1.219442` seconds  
 
 #### Python code used for profiling:
 ```python
