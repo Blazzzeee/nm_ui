@@ -10,7 +10,6 @@
 #### Using inbuilt timing methods
 Elapsed time: 1.487729 seconds 
 Python code user for profiling 
- '''
 
     profiler = cProfile.Profile()
     profiler.enable()
@@ -20,7 +19,24 @@ Python code user for profiling
     print("Main finished")
     profiler.print_stats()
     print(f"Elapsed time: {end - start:.6f} seconds")
- '''
 ### C (With render overhead)</br>
 #### Using inbuilt timing methods
 Elapsed time: 0.011355 seconds
+'''
+int main() {
+  clock_t start_time, end_time;
+
+  start_time = clock();
+
+  StartEventLoop();
+
+  Terminate(global_ctx);
+
+  end_time = clock();
+
+  double elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+
+  printf("Elapsed time: %f seconds\n", elapsed_time);
+
+  return 0;
+}'''
