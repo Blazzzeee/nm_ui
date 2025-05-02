@@ -8,24 +8,19 @@
 
 ### Python3 (with render overhead)</br>
 #### Using inbuilt timing methods
-Elapsed time: 1.487729 seconds
+Elapsed time: 1.487729 seconds 
 Python code user for profiling 
-'''
-    # Profile the main function
+ '''
+
     profiler = cProfile.Profile()
     profiler.enable()
-
-   main()
-
-   profiler.disable()
-   end = time.time()
-   print("Main finished")
-
-   # Print profiling results
-   profiler.print_stats()
-
-   print(f"Elapsed time: {end - start:.6f} seconds")
-'''
+    main()
+    profiler.disable()
+    end = time.time()
+    print("Main finished")
+    profiler.print_stats()
+    print(f"Elapsed time: {end - start:.6f} seconds")
+ '''
 ### C (With render overhead)</br>
 #### Using inbuilt timing methods
 Elapsed time: 0.011355 seconds
