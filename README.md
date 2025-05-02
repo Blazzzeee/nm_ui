@@ -23,7 +23,7 @@ print("Main finished")
 
 profiler.print_stats()
 print(f"Elapsed time: {end - start:.6f} seconds")
-
+```
 ### C (With Render Overhead)
 #### Using inbuilt timing methods  
 **Elapsed time:** `0.007561` seconds
@@ -47,3 +47,4 @@ int main() {
     return 0;
 }
 
+```
