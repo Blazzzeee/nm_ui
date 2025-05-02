@@ -5,10 +5,10 @@
 ### Python3  </br>
 
  Mean [ms]   | Min [ms] | Max [ms] | Relative |</br>
- 191.5 ± 3.5 | 182.5 | 199.4 | 1.00 |</br></br>
+ 191.5 ± 3.5 | 182.5 | 199.4 | 1.00 |</br>
 ### C </br>
  Mean [ms] | Min [ms] | Max [ms] | Relative |</br>
-| 11.3 ± 1.0 | 9.7 | 14.7 | 1.00 | </br></br>
+| 11.3 ± 1.0 | 9.7 | 14.7 | 1.00 | </br>
 
 ## With Render Overhead
 #### Done using inbuilt timing methods (c profiling for consistency)</br>
