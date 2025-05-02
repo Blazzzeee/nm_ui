@@ -21,7 +21,7 @@ Python code user for profiling
     print(f"Elapsed time: {end - start:.6f} seconds")
 ### C (With Render Overhead)
 #### Using inbuilt timing methods  
-**Elapsed time:** `0.011355` seconds
+**Elapsed time:** `0.007561` seconds
 
 ```c
 int main() {
