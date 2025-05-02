@@ -6,19 +6,24 @@
  Mean [ms] | Min [ms] | Max [ms] | Relative |</br>
 | 11.3 ± 1.0 | 9.7 | 14.7 | 1.00 |
 
-### Python3 (with render overhead)</br>
-#### Using inbuilt timing methods
-Elapsed time: 1.487729 seconds 
-Python code user for profiling 
+### Python3 (With Render Overhead)
+#### Using inbuilt timing methods  
+**Elapsed time:** `1.487729` seconds  
 
-    profiler = cProfile.Profile()
-    profiler.enable()
-    main()
-    profiler.disable()
-    end = time.time()
-    print("Main finished")
-    profiler.print_stats()
-    print(f"Elapsed time: {end - start:.6f} seconds")
+#### Python code used for profiling:
+```python
+profiler = cProfile.Profile()
+profiler.enable()
+
+main()
+
+profiler.disable()
+end = time.time()
+print("Main finished")
+
+profiler.print_stats()
+print(f"Elapsed time: {end - start:.6f} seconds")
+
 ### C (With Render Overhead)
 #### Using inbuilt timing methods  
 **Elapsed time:** `0.007561` seconds
