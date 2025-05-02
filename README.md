@@ -11,7 +11,7 @@
 | 11.3 ± 1.0 | 9.7 | 14.7 | 1.00 | </br></br>
 
 ## With Render Overhead
-#### Using inbuilt timing methods</br>
+#### Done using inbuilt timing methods (c profiling for consistency)</br>
 
 ### Python3
 
@@ -35,7 +35,6 @@ print(f"Elapsed time: {end - start:.6f} seconds")
 ![python](./assets/python.png)
 </br> </br>
 ### C (With Render Overhead)
-#### Using inbuilt timing methods  
 **Elapsed time:** `0.007561` seconds
 
 ```c
