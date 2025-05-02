@@ -19,24 +19,26 @@ Python code user for profiling
     print("Main finished")
     profiler.print_stats()
     print(f"Elapsed time: {end - start:.6f} seconds")
-### C (With render overhead)</br>
-#### Using inbuilt timing methods
-Elapsed time: 0.011355 seconds
-'''
+### C (With Render Overhead)
+#### Using inbuilt timing methods  
+**Elapsed time:** `0.011355` seconds
+
+```c
 int main() {
-  clock_t start_time, end_time;
+    clock_t start_time, end_time;
 
-  start_time = clock();
+    start_time = clock();
 
-  StartEventLoop();
+    StartEventLoop();
 
-  Terminate(global_ctx);
+    Terminate(global_ctx);
 
-  end_time = clock();
+    end_time = clock();
 
-  double elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    double elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
 
-  printf("Elapsed time: %f seconds\n", elapsed_time);
+    printf("Elapsed time: %f seconds\n", elapsed_time);
 
-  return 0;
-}'''
+    return 0;
+}
+
