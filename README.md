@@ -1,13 +1,20 @@
 ## Benchmarks 
-### Python3 (Without render overhead) </br>
+## Without render overhead
+#### Done using ![hyperfine](https://github.com/sharkdp/hyperfine) with 3 warmup runs and 100 tests , using hardcoded input </br>
+
+### Python3  </br>
+
  Mean [ms]   | Min [ms] | Max [ms] | Relative |</br>
  191.5 ± 3.5 | 182.5 | 199.4 | 1.00 |</br></br>
-### C (Without render overhead)</br>
+### C </br>
  Mean [ms] | Min [ms] | Max [ms] | Relative |</br>
-| 11.3 ± 1.0 | 9.7 | 14.7 | 1.00 |
+| 11.3 ± 1.0 | 9.7 | 14.7 | 1.00 | </br></br>
 
-### Python3 (With Render Overhead)
-#### Using inbuilt timing methods  
+## With Render Overhead
+#### Using inbuilt timing methods</br>
+
+### Python3
+
 **Elapsed time:** `1.219442` seconds  
 
 #### Python code used for profiling:
