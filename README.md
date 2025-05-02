@@ -26,6 +26,7 @@ print(f"Elapsed time: {end - start:.6f} seconds")
 ```
 #### Assets
 ![python](./assets/python.png)
+</br> </br>
 ### C (With Render Overhead)
 #### Using inbuilt timing methods  
 **Elapsed time:** `0.007561` seconds
@@ -50,3 +51,7 @@ int main() {
 }
 
 ```
+
+#### Assets
+![c](./assets/c.png)
+</br> </br>
